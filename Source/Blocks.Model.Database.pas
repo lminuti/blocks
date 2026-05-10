@@ -27,12 +27,23 @@ uses
 ///   It maps library identifiers to their installed version strings.
 /// </remarks>
 type
+  TInstalledPackage = class
+  private
+    FId: string;
+    FVersion: string;
+    FTimestamp: TDateTime;
+  public
+    property Id: string read FId write FId;
+    property Version: string read FVersion write FVersion;
+    property Timestamp: TDateTime read FTimestamp write FTimestamp;
+  end;
+
   TDatabase = class
   private
-    FPackages: TDictionary<string, string>;
+    FPackages: TDictionary<string, TInstalledPackage>;
     FDatabasePath: string;
   public
-    property Packages: TDictionary<string, string> read FPackages;
+    property Packages: TDictionary<string, TInstalledPackage> read FPackages;
 
     /// <summary>Removes the database entry for a package.</summary>
     /// <param name="LibraryId">Library identifier.</param>
@@ -105,13 +116,13 @@ end;
 function TDatabase.ListEntries: TArray<string>;
 var
   I: Integer;
-  LPair: TPair<string, string>;
+  LPair: TPair<string, TInstalledPackage>;
 begin
   SetLength(Result, FPackages.Count);
   I := 0;
   for LPair in FPackages do
   begin
-    Result[I] := LPair.Key + '@' + LPair.Value;
+    Result[I] := LPair.Key + '@' + LPair.Value.Version;
     Inc(I);
   end;
 end;
@@ -140,7 +151,7 @@ end;
 constructor TDatabase.Create;
 begin
   inherited;
-  FPackages := TDictionary<string, string>.Create;
+  FPackages := TObjectDictionary<string, TInstalledPackage>.Create([doOwnsValues]);
   FDatabasePath := TPath.Combine(TWorkspace.BlocksDir, 'database.json')
 end;
 
@@ -152,15 +163,28 @@ end;
 
 function TDatabase.InstalledVersion(const LibraryId: string): string;
 begin
-  Result := '';
-  FPackages.TryGetValue(LibraryId, Result);
+  var LInstalledPackage: TInstalledPackage := nil;
+
+  if FPackages.TryGetValue(LibraryId, LInstalledPackage) then
+    Result := LInstalledPackage.Version
+  else
+    Result := '';
 end;
 
 procedure TDatabase.Update(const LibraryId, AVersion: string);
 begin
-  FPackages.AddOrSetValue(LibraryId, AVersion);
-  TConsole.WriteLine('Database updated: ' + LibraryId + '@' + AVersion, clDkGray);
-  Save;
+  var LInstalledPackage := TInstalledPackage.Create;
+  try
+    LInstalledPackage.Id := LibraryId;
+    LInstalledPackage.Version := AVersion;
+    LInstalledPackage.Timestamp := Now;
+    FPackages.AddOrSetValue(LibraryId, LInstalledPackage);
+    TConsole.WriteLine('Database updated: ' + LibraryId + '@' + AVersion, clDkGray);
+    Save;
+  except
+    LInstalledPackage.Free;
+    raise;
+  end;
 end;
 
 end.

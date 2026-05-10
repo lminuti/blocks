@@ -21,7 +21,8 @@ uses
   Blocks.Model.Database,
   Blocks.Model.Config,
   Blocks.JSON,
-  Blocks.Core;
+  Blocks.Core,
+  Blocks.Service.Product;
 
 type
   TWorkspace = class
@@ -30,6 +31,7 @@ type
       FWorkDir: string;
       FConfig: TConfig;
       FDatabase: TDatabase;
+      FDelphiRunningContinue: Boolean;
     class function GetWorkDir: string; static;
     class function GetBlocksDir: string; static;
     class procedure SetWorkDir(const AValue: string); static;
@@ -46,6 +48,7 @@ type
     ///   matches are resolved interactively (or raise when <paramref name="ASilent"/> is true).
     /// </remarks>
     class function ResolvePackageId(const AArg: string; ASilent: Boolean = False): string; static;
+    class procedure TestDelphiRunning(AProduct: TProduct); static;
     class constructor Create;
     class destructor  Destroy;
   public
@@ -105,7 +108,6 @@ uses
   Blocks.Console,
   Blocks.Http,
   Blocks.Model.Manifest,
-  Blocks.Service.Product,
   Blocks.GitHub, Blocks.Model.Package;
 
 procedure ExpandMacros(var APath: string; AEnvironmentVariable: TStrings);
@@ -313,14 +315,7 @@ begin
   var RepoDir := TPath.Combine(GetBlocksDir, 'repository');
   if TDirectory.Exists(RepoDir) then
   begin
-    TConsole.WriteLine(Format('Directory "%s" already exists.', [RepoDir]), clYellow);
-    TConsole.Write('Overwrite? [Y/N] (default: N): ');
-    var Confirm := TConsole.ReadLine;
-    if not SameText(Trim(Confirm), 'Y') then
-    begin
-      TConsole.WriteLine('Operation cancelled.', clYellow);
-      Exit;
-    end;
+    TConsole.WriteLine('Workspace already initialised, updating repository...', clCyan);
     TDirectory.Delete(RepoDir, True);
   end;
 
@@ -398,6 +393,31 @@ begin
     TDirectory.Delete(DownloadDir, True);
 end;
 
+class procedure TWorkspace.TestDelphiRunning(AProduct: TProduct);
+begin
+  if FDelphiRunningContinue then
+    Exit;
+
+  if not AProduct.IsRunning then
+    Exit;
+
+  TConsole.WriteLine;
+  TConsole.WriteWarning('The following Delphi instance is currently open:');
+  TConsole.WriteLine('  - ' + AProduct.DisplayName, clYellow);
+  TConsole.WriteLine('  Closing Delphi before continuing is strongly recommended,', clYellow);
+  TConsole.WriteLine('  otherwise the installation may not work correctly.', clYellow);
+  TConsole.WriteLine;
+  TConsole.Write('Continue anyway? [y/N]: ');
+  var LAnswer := Trim(TConsole.ReadLine);
+  if (LAnswer = '') or not SameText(Copy(LAnswer, 1, 1), 'y') then
+  begin
+    TConsole.WriteLine('Aborted.', clYellow);
+    Halt(1);
+  end;
+
+  FDelphiRunningContinue := True;
+end;
+
 class procedure TWorkspace.Install(const APackageName, AVersionConstraint: string;
     AOverwrite, ABuildOnly, ASilent, AForce: Boolean);
 begin
@@ -420,6 +440,7 @@ begin
     if not SameText(LSelectedProduct.RegistryKey, 'BDS') then
       TConsole.WriteLine('Registry key    : ' + LSelectedProduct.RegistryKey, clGreen);
     TConsole.WriteLine;
+    TestDelphiRunning(LSelectedProduct);
 
     // Step 4 — Version compatibility check (unless -Overwrite or -BuildOnly)
     if not AOverwrite and not ABuildOnly then
@@ -546,6 +567,7 @@ begin
   if not SameText(LSelectedProduct.RegistryKey, 'BDS') then
     TConsole.WriteLine('Registry key    : ' + LSelectedProduct.RegistryKey, clGreen);
   TConsole.WriteLine;
+  TestDelphiRunning(LSelectedProduct);
 
   // Step 4 — Check that the package is actually installed
   var LInstalledVer := Database.InstalledVersion(LPackageId);
@@ -566,17 +588,23 @@ begin
       LSelectedProduct.FillEnvironmentVariables(LEnvironmentVariables);
       for var LPackage in LManifest.Packages do
       begin
-        for var LPlatformPair in LManifest.Platforms do
-        begin
-          var LPackageFolder := LSelectedProduct.GetPackageFolder(LManifest.PackageOptions.Folders);
-          var LPackagesPath := TPath.Combine(TPath.Combine(LProjectDir, 'packages'), LPackageFolder);
-          var DprojPath := TPath.Combine(LPackagesPath, LPackage.Name + '.dproj');
+        var LPackageFolder := LSelectedProduct.GetPackageFolder(LManifest.PackageOptions.Folders);
+        var LPackagesPath := TPath.Combine(TPath.Combine(LProjectDir, 'packages'), LPackageFolder);
+        var DprojPath := TPath.Combine(LPackagesPath, LPackage.Name + '.dproj');
+        var LPackageProject := TPackageProject.LoadFromFile(DprojPath);
+        try
+          for var LPlatformPair in LManifest.Platforms do
+          begin
+            if LPackage.IsDesignTime then
+              LSelectedProduct.UninstallPackage(LPackage, WorkDir, DprojPath, LPlatformPair);
 
-          if LPackage.IsDesignTime then
-            LSelectedProduct.UninstallPackage(LPackage, WorkDir, DprojPath, LPlatformPair);
+            var LPlatformPaths := GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);
+            LSelectedProduct.DeleteSearchPaths(LPlatformPair.Key, LProjectDir, LPlatformPaths);
 
-          var LPlatformPaths := GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);
-          LSelectedProduct.DeleteSearchPaths(LPlatformPair.Key, LProjectDir, LPlatformPaths);
+            LSelectedProduct.RemovePackage(WorkDir, LPackageProject, LPlatformPair);
+          end;
+        finally
+          LPackageProject.Free;
         end;
       end;
     finally

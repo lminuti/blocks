@@ -72,6 +72,8 @@ type
 
     class procedure LoadProducts;
     class function GetProductNames: TArray<string>; static;
+    function GetPackageOutput(const AWorkspaceDir: string;
+      APackage: TPackageProject; const APlatform, AConfig, AOutputType: string): string;
 
   public
     constructor Create(const ABdsVersion, AVersionName, ADisplayName, ARootDir, ARegistryKey: string);
@@ -105,11 +107,6 @@ type
     ///   (installed version is older than all keys in the manifest).</exception>
     function GetPackageFolder(APackageFolders: TDictionary<string, string>): string;
 
-    /// <summary>Checks whether a target platform is installed for this Delphi version.</summary>
-    /// <param name="APlatform">Platform identifier, e.g. <c>Win32</c>, <c>Win64</c>, <c>Android</c>.</param>
-    /// <returns><c>True</c> if the platform's library registry key exists under HKLM or HKCU.</returns>
-    function TestPlatformInstalled(const APlatform: string): Boolean;
-
     /// <summary>Compiles all declared packages and updates the Delphi library registry paths.</summary>
     /// <param name="AProjectDir">Root directory of the extracted project.</param>
     /// <param name="APackageFolder">Subfolder under <c>packages\</c> that contains the <c>.dproj</c> files.</param>
@@ -120,6 +117,9 @@ type
         const AWorkspaceDir, AProjectDir, APackageFolder: string;
         const AManifest: TManifest
     );
+
+    /// <summary>Delete package (bpl and dcp).</summary>
+    procedure RemovePackage(const AWorkspaceDir: string; APackage: TPackageProject; const APlatformPair: TPair<string, TManifestPlatform>);
 
     /// <summary>Appends source, browsing, and debug DCU paths to the Delphi library registry.</summary>
     /// <param name="APlatform">Target platform identifier, e.g. <c>Win32</c>.</param>
@@ -596,6 +596,35 @@ begin
   end;
 end;
 
+procedure TProduct.RemovePackage(const AWorkspaceDir: string; APackage: TPackageProject; const APlatformPair: TPair<string, TManifestPlatform>);
+
+  procedure SafeDeleteFile(const AFileName: string);
+  begin
+    TConsole.WriteLine(Format('Deleting file %s', [AFileName]));
+    if not System.SysUtils.DeleteFile(AFileName) then
+      TConsole.WriteWarning(Format('Can''t delete file %s', [AFileName]));
+  end;
+
+begin
+  var LFileName := '';
+
+  LFileName := GetPackageOutput(AWorkspaceDir, APackage, APlatformPair.Key, 'release', 'bpl');
+  SafeDeleteFile(LFileName);
+  LFileName := GetPackageOutput(AWorkspaceDir, APackage, APlatformPair.Key, 'debug', 'bpl');
+  SafeDeleteFile(LFileName);
+  LFileName := GetPackageOutput(AWorkspaceDir, APackage, APlatformPair.Key, 'release', 'dcp');
+  SafeDeleteFile(LFileName);
+  LFileName := GetPackageOutput(AWorkspaceDir, APackage, APlatformPair.Key, 'debug', 'dcp');
+  SafeDeleteFile(LFileName);
+
+  if SameText(APlatformPair.Key, 'win64') then
+  begin
+    LFileName := GetPackageOutput(AWorkspaceDir, APackage, APlatformPair.Key, 'debug', 'rsm');
+    if FileExists(LFileName) then
+      SafeDeleteFile(LFileName);
+  end;
+end;
+
 class function TProduct.Find(const AVersionName: string; const ARegistryKey: string = 'BDS'): TProduct;
 begin
   for var P in FProducts do
@@ -782,16 +811,34 @@ begin
   end;
 end;
 
-function TProduct.GetBPLFileName(const AWorkspaceDir: string; APackage: TPackageProject; const APlatform: string): string;
+function TProduct.GetPackageOutput(const AWorkspaceDir: string; APackage: TPackageProject; const APlatform, AConfig, AOutputType: string): string;
 begin
+  // Release builds drop their artifacts directly under the output type folder; only Debug uses a subfolder.
+  var LConfigDir := AConfig;
+  if SameText(AConfig, 'release') then
+    LConfigDir := '';
+
+  // Win64 .rsm (remote symbol) files are emitted next to the .bpl, not in their own folder.
+  var LOutputTypeDir := AOutputType;
+  if SameText(AOutputType, 'rsm') then
+    LOutputTypeDir := 'bpl';
+
   var LPackageNameSuffix := APackage.LibSuffix;
   if SameText(LPackageNameSuffix, 'AUTO') or SameText(LPackageNameSuffix, '$(Auto)') then
     LPackageNameSuffix := FPackageVersion;
+  // .dcp files do not carry the LibSuffix, unlike .bpl/.rsm.
+  if SameText(AOutputType, 'dcp') then
+    LPackageNameSuffix := '';
 
-  var LDefaultBplOutputDirectory := TPath.Combine(AWorkspaceDir, '.blocks', 'bpl');
+  var LDefaultOutputDirectory := TPath.Combine([AWorkspaceDir, '.blocks', APlatform, LOutputTypeDir, LConfigDir]);
 
-  var LPackageFileName := APackage.Name + LPackageNameSuffix + '.bpl';
-  Result := ExpandEnvironment(TPath.Combine(LDefaultBplOutputDirectory, LPackageFileName));
+  var LPackageFileName := APackage.Name + LPackageNameSuffix + '.' + AOutputType;
+  Result := ExpandEnvironment(TPath.Combine(LDefaultOutputDirectory, LPackageFileName));
+end;
+
+function TProduct.GetBPLFileName(const AWorkspaceDir: string; APackage: TPackageProject; const APlatform: string): string;
+begin
+  Result := GetPackageOutput(AWorkspaceDir, APackage, APlatform, 'release', 'bpl');
 end;
 
 function TProduct.GetKnownPackageRegKey(const APlatform: string): string;
@@ -851,35 +898,6 @@ begin
   var LProducts := Products;
   for var P in LProducts do
     Result := Result + [P.DisplayName];
-end;
-
-function TProduct.TestPlatformInstalled(const APlatform: string): Boolean;
-begin
-  Result := False;
-  var Reg := TRegistry.Create(KEY_READ);
-  try
-    for var RegPath
-        in [
-            'SOFTWARE\WOW6432Node\Embarcadero\' + FRegistryKey + '\' + FBdsVersion + '\Library\' + APlatform,
-            'SOFTWARE\Embarcadero\' + FRegistryKey + '\' + FBdsVersion + '\Library\' + APlatform] do
-    begin
-      Reg.RootKey := HKEY_LOCAL_MACHINE;
-      if Reg.OpenKeyReadOnly(RegPath) then
-      begin
-        Reg.CloseKey;
-        Result := True;
-        Exit;
-      end;
-    end;
-    Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKeyReadOnly('SOFTWARE\Embarcadero\' + FRegistryKey + '\' + FBdsVersion + '\Library\' + APlatform) then
-    begin
-      Reg.CloseKey;
-      Result := True;
-    end;
-  finally
-    Reg.Free;
-  end;
 end;
 
 procedure TProduct.UninstallPackage(APackage: TManifestPackage;
@@ -1038,15 +1056,29 @@ begin
   if NewPath <> CurPath then
     SetEnvironmentVariable('PATH', PChar(NewPath));
 
-  // Verify all platforms are installed before starting
-  for var LPlatformPair in AManifest.Platforms do
-    if not TestPlatformInstalled(LPlatformPair.Key) then
-      raise Exception.CreateFmt('Platform "%s" is not installed for %s.', [LPlatformPair.Key, FDisplayName]);
-
   var PlatformNames := TStringList.Create;
   try
     for var LPlatformPair in AManifest.Platforms do
-      PlatformNames.Add(LPlatformPair.Key);
+    begin
+      var LProductPlatform: TProductPlatform;
+      if Platforms.TryGetValue(LPlatformPair.Key, LProductPlatform) and LProductPlatform.Active then
+        PlatformNames.Add(LPlatformPair.Key);
+    end;
+
+    if PlatformNames.Count = 0 then
+    begin
+      var LManifestPlatforms := TStringList.Create;
+      try
+        for var LPlatformPair in AManifest.Platforms do
+          LManifestPlatforms.Add(LPlatformPair.Key);
+        raise Exception.CreateFmt(
+            'None of the platforms supported by this package (%s) is active in %s.',
+            [LManifestPlatforms.CommaText, FDisplayName]
+        );
+      finally
+        LManifestPlatforms.Free;
+      end;
+    end;
 
     TConsole.WriteLine('Compiling packages...', clCyan);
     TConsole.WriteLine('  MSBuild   : ' + MsBuild);
@@ -1060,9 +1092,12 @@ begin
 
   for var LPlatformPair in AManifest.Platforms do
   begin
-    var LPlatform := LPlatformPair.Value;
+    var LPlatform := LPlatformPair.Key;
+    var LProductPlatform: TProductPlatform;
+    if not (Platforms.TryGetValue(LPlatform, LProductPlatform) and LProductPlatform.Active) then
+      Continue;
 
-    TConsole.WriteLine('  [' + LPlatformPair.Key + ']', clDkCyan);
+    TConsole.WriteLine('  [' + LPlatform + ']', clDkCyan);
 
     for var LPackage in AManifest.Packages do
     begin
@@ -1081,19 +1116,19 @@ begin
         var LSuffix := if SameText(LBuildConfig, 'Debug')  then 'debug' else '';
 
         LMSBuildParams :=
-          ' /p:DCC_BplOutput="' + TPath.Combine(BlocksDir, 'bpl', LSuffix) + '"' +
-          ' /p:DCC_DcpOutput="' + TPath.Combine(BlocksDir, 'dcp', LSuffix) + '"';
+          ' /p:DCC_BplOutput="' + TPath.Combine(BlocksDir, LPlatform, 'bpl', LSuffix) + '"' +
+          ' /p:DCC_DcpOutput="' + TPath.Combine(BlocksDir, LPlatform, 'dcp', LSuffix) + '"';
 
         if not AManifest.PackageOptions.KeepProjectDcuPaths then
         begin
           LMSBuildParams := LMSBuildParams +
-            ' /p:DCC_DcuOutput="' + TPath.Combine(AProjectDir, 'lib', LPlatformPair.Key, LSuffix) + '"';
+            ' /p:DCC_DcuOutput="' + TPath.Combine(AProjectDir, 'lib', LPlatform, LSuffix) + '"';
         end;
 
         var CmdLine :=
             Format(
                 '"%s" "%s" /t:Make /p:config=%s /p:platform=%s %s /nologo /v:quiet',
-                [MsBuild, DprojPath, LBuildConfig, LPlatformPair.Key, LMSBuildParams]
+                [MsBuild, DprojPath, LBuildConfig, LPlatform, LMSBuildParams]
             );
 
         var Output: string;

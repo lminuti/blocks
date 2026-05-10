@@ -38,7 +38,6 @@ type
     procedure WriteOption(const AOption, AText: string); overload;
     procedure WriteOption(const AText: string); overload;
     procedure CheckWorkspace;
-    procedure TestDelphiRunning;
   end;
 
   THelpCommand = class(TBaseCommand)
@@ -476,7 +475,6 @@ begin
     LVersionConstraint := Trim(LParts[1]);
   end;
   ShowBanner('', '');
-  TestDelphiRunning;
   TWorkspace.Install(LPackageName, LVersionConstraint, FOverwrite, FBuildOnly, FSilent, FForce);
 end;
 
@@ -517,7 +515,6 @@ begin
   inherited;
   CheckWorkspace;
   ShowBanner('', '');
-  TestDelphiRunning;
   TWorkspace.Uninstall(FPackageName);
 end;
 
@@ -635,33 +632,6 @@ begin
     if Description <> '' then
       TConsole.WriteLine('  About    ▸  ' + Description, clGray);
     TConsole.WriteLine;
-  end;
-end;
-
-// -- Delphi running check ------------------------------------------------------
-
-procedure TBaseCommand.TestDelphiRunning;
-begin
-  var Running := TStringList.Create;
-  try
-    for var P in TProduct.Products do
-      if P.IsRunning and (P.RegistryKey = 'BDS') then
-        Running.Add(P.DisplayName);
-
-    if Running.Count = 0 then
-      Exit;
-
-    TConsole.WriteLine;
-    TConsole.WriteWarning('The following Delphi instance(s) are currently open:');
-    for var Name in Running do
-      TConsole.WriteLine('  - ' + Name, clYellow);
-    TConsole
-        .WriteLine('  Please close Delphi before continuing, or the installation may not work correctly.', clYellow);
-    TConsole.WriteLine;
-    TConsole.Write('Press ENTER to continue anyway, or close Delphi and then press ENTER: ');
-    var Confirm := TConsole.ReadLine;
-  finally
-    Running.Free;
   end;
 end;
 
