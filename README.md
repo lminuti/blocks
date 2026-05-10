@@ -23,17 +23,17 @@ A command-line package manager for Delphi / RAD Studio. DelphiBlocks automates d
 
 ```
 Commands:
-  install <package>      Install a package by id (vendor.name) or name.
-  uninstall <package>    Remove a package from the workspace and database.
-  init                   Initialise the workspace and download the package repository.
-  list                   List packages installed in the current workspace.
-  listproducts           List detected Delphi installations.
-  search [pattern]       Search the repository index by id, name, description or keywords.
-  config                 Read or write workspace or system configuration values.
-  view <id[@version]>    Show details of a package from the repository (latest if @version omitted).
-  version                Print the version of the blocks executable.
-  upgrade                Check for a newer release and download the setup if available.
-  help [command]         Show this message, or detailed help for a specific command.
+  install <package>        Install a package by id (vendor.name) or name.
+  uninstall <package>      Remove a package from the workspace and database.
+  init                     Initialise the workspace and download the package repository.
+  list                     List packages installed in the current workspace.
+  product [name[:key]...]  Show detected Delphi installations.
+  search [pattern]         Search the repository index by id, name, description or keywords.
+  config                   Read or write workspace or system configuration values.
+  view <id[@version]>      Show details of a package from the repository (latest if @version omitted).
+  version                  Print the version of the blocks executable.
+  upgrade                  Check for a newer release and download the setup if available.
+  help [command]           Show this message, or detailed help for a specific command.
 ```
 
 ### Quick start
@@ -57,6 +57,19 @@ blocks uninstall owner.package
 REM List installed packages
 blocks list
 
+REM Show detected Delphi installations
+blocks product
+
+REM Show all properties for each installation (active platforms, search paths, running status)
+blocks product /detail
+
+REM Show details for a specific version
+blocks product delphi13
+blocks product delphi13:blocks
+
+REM Show details for multiple versions at once
+blocks product delphi12 delphi13
+
 REM View package info
 blocks view owner.package@1.2.0
 blocks view owner.package /versions
@@ -79,6 +92,35 @@ Append `@<constraint>` to a package ID to pin or restrict the version:
 | `@>=1.0.0 <2.0.0` | Explicit range |
 
 > **Note:** In `cmd.exe` the `^` character must be escaped as `^^` (e.g. `owner.package@^^1.2.0`). In PowerShell no escaping is needed.
+
+### The `product` command
+
+`blocks product` lists all Delphi / RAD Studio installations found in the Windows registry. The version name shown (e.g. `delphi13`) is the value to pass as `/product` to other commands.
+
+| Option / argument | Effect |
+|-------------------|--------|
+| _(none)_ | List all installed products in compact form. |
+| `name[:regkey]` | Show detailed info for the named product. Repeat to show multiple. `regkey` defaults to `BDS` when omitted. |
+| `/all` | List all supported Delphi versions (not just installed ones). |
+| `/detail` | Show full detail for every installed product: BDS version, root directory, registry key, running status, and active platform paths. |
+
+The **running status** checks the actual `bds.exe` command line: a profile opened with `bds.exe -r blocks` is only shown as running for the `blocks` registry key, not for `BDS` or any other profile.
+
+With `/detail` (or when filtering by name), only **active platforms** are listed — those for which a platform SDK is configured (`Win32` and `Win64` are always active; others require a matching SDK entry under `PlatformSDKs` in the registry).
+
+```bat
+REM Compact list of all installed versions
+blocks product
+
+REM Full detail for all versions
+blocks product /detail
+
+REM Detail for delphi13 using the default BDS profile
+blocks product delphi13
+
+REM Detail for delphi12 using the "blocks" profile
+blocks product delphi12:blocks
+```
 
 ## Output layout
 

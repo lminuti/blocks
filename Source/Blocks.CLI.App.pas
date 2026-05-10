@@ -58,10 +58,14 @@ type
     procedure ShowHelp; override;
   end;
 
-  TListProductsCommand = class(TBaseCommand)
+  TProductCommand = class(TBaseCommand)
   private
     [Param('all')]
     FAll: Boolean;
+    [Param('detail')]
+    FDetail: Boolean;
+    [Param]
+    FProductArgs: TArray<string>;
   public
     procedure Execute; override;
     procedure ShowHelp; override;
@@ -232,7 +236,7 @@ begin
   WriteOption('uninstall <package>', 'Remove a package from the workspace and database.');
   WriteOption('init', 'Initialise the workspace and download the package repository.');
   WriteOption('list', 'List packages installed in the current workspace.');
-  WriteOption('listproducts', 'List detected Delphi installations.');
+  WriteOption('product [name...]', 'Show Delphi installations. Pass names to filter and get details.');
   WriteOption('search [pattern]', 'Search the repository index by id, name, description or keywords.');
   WriteOption('config', 'Read or write workspace or system configuration values.');
   WriteOption('view <id[@version]>', 'Show details of a package from the repository.');
@@ -260,7 +264,7 @@ begin
   if LProductName = '' then
     raise Exception.Create(
         'No Delphi version configured. Run "blocks init -product <version>" first.');
-  ListBlocks(TProduct.FindByNameAndKey(LProductName, TWorkspace.Config.RegistryKey));
+  ListBlocks(TProduct.Find(LProductName, TWorkspace.Config.RegistryKey));
 end;
 
 procedure TListCommand.ListBlocks(AProduct: TProduct);
@@ -305,11 +309,35 @@ begin
   TConsole.WriteLine;
 end;
 
-{ TListProductsCommand }
+{ TProductCommand }
 
-procedure TListProductsCommand.Execute;
+procedure TProductCommand.Execute;
+
+  procedure ShowDetail(AProduct: TProduct);
+  begin
+    TConsole.WriteLine('  ' + AProduct.VersionName, clCyan);
+    TConsole.WriteLine(Format('    %-22s %s', ['Display Name:', AProduct.DisplayName]));
+    TConsole.WriteLine(Format('    %-22s %s', ['BDS Version:', AProduct.BdsVersion]));
+    TConsole.WriteLine(Format('    %-22s %s', ['Root Dir:', AProduct.RootDir]));
+    TConsole.WriteLine(Format('    %-22s %s', ['Registry Key:', AProduct.RegistryKey]));
+    TConsole.WriteLine(Format('    %-22s %s', ['Running:', if AProduct.IsRunning then 'Yes' else 'No']));
+    for var LPlatform in AProduct.Platforms.Values do
+    begin
+      if not LPlatform.Active then
+        Continue;
+      TConsole.WriteLine('    [' + LPlatform.Name + ']', clDkCyan);
+      TConsole.WriteLine(Format('      %-22s %s', ['Search Path:', LPlatform.SearchPath]));
+      TConsole.WriteLine(Format('      %-22s %s', ['HPP Output Dir:', LPlatform.HPPOutputDirectory]));
+      TConsole.WriteLine(Format('      %-22s %s', ['Package DCP Output:', LPlatform.PackageDCPOutput]));
+      TConsole.WriteLine(Format('      %-22s %s', ['Package DPL Output:', LPlatform.PackageDPLOutput]));
+      TConsole.WriteLine(Format('      %-22s %s', ['Package Search Path:', LPlatform.PackageSearchPath]));
+    end;
+    TConsole.WriteLine;
+  end;
+
 begin
   inherited;
+
   if FAll then
   begin
     TConsole.WriteLine;
@@ -326,6 +354,22 @@ begin
     Exit;
   end;
 
+  // Filter by product names provided as positional arguments
+  if Length(FProductArgs) > 0 then
+  begin
+    TConsole.WriteLine;
+    TConsole.WriteLine('Delphi versions:', clWhite);
+    TConsole.WriteLine;
+    for var LArg in FProductArgs do
+    begin
+      var LParts := LArg.Split([':'], 2);
+      var LVersionName := LParts[0];
+      var LRegistryKey := if Length(LParts) > 1 then LParts[1] else 'BDS';
+      ShowDetail(TProduct.Find(LVersionName, LRegistryKey));
+    end;
+    Exit;
+  end;
+
   if TProduct.Products.Count = 0 then
   begin
     TConsole.WriteWarning('No Delphi versions found in the registry.');
@@ -334,25 +378,38 @@ begin
   TConsole.WriteLine;
   TConsole.WriteLine('Installed Delphi versions:', clWhite);
   TConsole.WriteLine;
-  for var P in TProduct.Products do
-    TConsole.WriteLine(Format('  %-20s %-15s %s', [P.VersionName, P.RegistryKey, P.DisplayName]));
-  TConsole.WriteLine;
+  if FDetail then
+  begin
+    for var P in TProduct.Products do
+      ShowDetail(P);
+  end
+  else
+  begin
+    for var P in TProduct.Products do
+      TConsole.WriteLine(Format('  %-20s %-15s %s', [P.VersionName, P.RegistryKey, P.DisplayName]));
+    TConsole.WriteLine;
+  end;
 end;
 
-procedure TListProductsCommand.ShowHelp;
+procedure TProductCommand.ShowHelp;
 begin
   TConsole.WriteLine;
-  TConsole.WriteLine('Lists all Delphi installations detected in the Windows registry.');
+  TConsole.WriteLine('Shows Delphi/RAD Studio installations detected in the Windows registry.');
   TConsole.WriteLine('Use the version name shown here as the /product argument for other commands.');
   TConsole.WriteLine;
-  TConsole.WriteLine('Usage: ' + AppExeName + ' listproducts [options]', clWhite);
+  TConsole.WriteLine('Usage: ' + AppExeName + ' product [name[:regkey]...] [options]', clWhite);
   TConsole.WriteLine;
   TConsole.WriteLine('Options:', clWhite);
   WriteOption('/all', 'Show all supported Delphi versions instead of installed ones.');
+  WriteOption('/detail', 'Show all properties for each installed product.');
   TConsole.WriteLine;
   TConsole.WriteLine('Examples:', clWhite);
-  TConsole.WriteLine('  ' + AppExeName + ' listproducts');
-  TConsole.WriteLine('  ' + AppExeName + ' listproducts /all');
+  TConsole.WriteLine('  ' + AppExeName + ' product');
+  TConsole.WriteLine('  ' + AppExeName + ' product /all');
+  TConsole.WriteLine('  ' + AppExeName + ' product /detail');
+  TConsole.WriteLine('  ' + AppExeName + ' product delphi12');
+  TConsole.WriteLine('  ' + AppExeName + ' product delphi12:blocks');
+  TConsole.WriteLine('  ' + AppExeName + ' product delphi12 delphi13');
   TConsole.WriteLine;
 end;
 
@@ -392,7 +449,7 @@ begin
   TConsole.WriteLine('Options:', clWhite);
   WriteOption('/product <version>', 'Target Delphi version (e.g. delphi12, delphi13).');
   WriteOption('', 'If omitted, you will be prompted to choose.');
-  WriteOption('', 'Run "' + AppExeName + ' listproducts" to see valid values.');
+  WriteOption('', 'Run "' + AppExeName + ' product" to see valid values.');
   WriteOption('/registrykey <key>', 'Registry profile key (default: BDS).');
   WriteOption('', 'Use this when Delphi is started with -r <key>.');
   TConsole.WriteLine;
@@ -1089,7 +1146,7 @@ initialization
 
 TCommand.RegisterCommand('help', THelpCommand, True);
 TCommand.RegisterCommand('list', TListCommand);
-TCommand.RegisterCommand('listproducts', TListProductsCommand);
+TCommand.RegisterCommand('product', TProductCommand);
 TCommand.RegisterCommand('init', TInitCommand);
 TCommand.RegisterCommand('install', TInstallCommand);
 TCommand.RegisterCommand('uninstall', TUninstallCommand);

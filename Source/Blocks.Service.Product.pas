@@ -29,6 +29,26 @@ type
     DebugDCUPath: TArray<string>;
   end;
 
+  TProductPlatform = class
+  private
+    FName: string;
+    FActive: Boolean;
+    FSearchPath: string;
+    FHPPOutputDirectory: string;
+    FPackageDCPOutput: string;
+    FPackageDPLOutput: string;
+    FPackageSearchPath: string;
+  public
+    constructor Create(const AName: string);
+    property Name: string read FName;
+    property Active: Boolean read FActive write FActive;
+    property SearchPath: string read FSearchPath write FSearchPath;
+    property HPPOutputDirectory: string read FHPPOutputDirectory write FHPPOutputDirectory;
+    property PackageDCPOutput: string read FPackageDCPOutput write FPackageDCPOutput;
+    property PackageDPLOutput: string read FPackageDPLOutput write FPackageDPLOutput;
+    property PackageSearchPath: string read FPackageSearchPath write FPackageSearchPath;
+  end;
+
   /// <summary>Represents a single Delphi/RAD Studio installation.</summary>
   TProduct = class
   private
@@ -38,6 +58,7 @@ type
     FRootDir: string;
     FRegistryKey: string;
     FPackageVersion: string;
+    FPlatforms: TObjectDictionary<string, TProductPlatform>;
 
     class var
       FProducts: TObjectList<TProduct>;
@@ -46,35 +67,30 @@ type
     function ExpandEnvironment(const AValue: string): string;
     function GetKnownPackageRegKey(const APlatform: string): string;
     function GetBPLFileName(const AWorkspaceDir: string; APackage: TPackageProject; const APlatform: string): string;
+    function GetPlatforms: TDictionary<string, TProductPlatform>;
+    procedure LoadPlatforms;
 
     class procedure LoadProducts;
     class function GetProductNames: TArray<string>; static;
 
   public
     constructor Create(const ABdsVersion, AVersionName, ADisplayName, ARootDir, ARegistryKey: string);
+    destructor Destroy; override;
     class constructor Create;
     class destructor Destroy;
 
-    /// <summary>Finds an installed product by display name or version name.</summary>
-    /// <param name="AProduct">Display name (e.g. <c>Delphi 12 Athens</c>) or internal
-    ///   version name (e.g. <c>delphi12</c>), matched case-insensitively.</param>
+    /// <summary>Finds an installed product by version name and optional registry key.</summary>
+    /// <param name="AVersionName">Internal version name (e.g. <c>delphi12</c>), matched case-insensitively.</param>
+    /// <param name="ARegistryKey">Registry profile key (e.g. <c>BDS</c> or a custom key). Defaults to <c>BDS</c>.</param>
     /// <returns>The matching <see cref="TProduct"/> instance from <see cref="Products"/>.</returns>
-    /// <exception cref="Exception">Raised when no installed product matches <c>AProduct</c>.</exception>
-    class function Find(const AProduct: string): TProduct;
+    /// <exception cref="Exception">Raised when no installed product matches.</exception>
+    class function Find(const AVersionName: string; const ARegistryKey: string = 'BDS'): TProduct;
 
-    /// <summary>Finds an installed product by version name and registry key.</summary>
-    /// <param name="AVersionName">Internal version name (e.g. <c>delphi12</c>).</param>
-    /// <param name="ARegistryKey">Registry profile key (e.g. <c>BDS</c> or a custom key).</param>
-    /// <exception cref="Exception">Raised when no match is found.</exception>
-    class function FindByNameAndKey(const AVersionName, ARegistryKey: string): TProduct;
-
-    /// <summary>Selects an installed product interactively or by name.</summary>
-    /// <param name="AProduct">When non-empty, delegates to <see cref="Find"/>.
-    ///   When empty, displays a numbered menu on stdout and reads the choice from stdin.</param>
+    /// <summary>Selects an installed product interactively.</summary>
     /// <returns>The selected <see cref="TProduct"/>. Returns the newest product (index 0)
     ///   when the user presses ENTER without entering a number.</returns>
     /// <exception cref="Exception">Raised when no Delphi version is installed.</exception>
-    class function Select(const AProduct: string): TProduct;
+    class function Choose: TProduct;
 
     /// <summary>Checks whether this Delphi IDE instance is currently running.</summary>
     /// <returns><c>True</c> if a <c>bds.exe</c> process whose full image path matches
@@ -150,6 +166,8 @@ type
     property RootDir: string read FRootDir;
     /// <summary>Registry key name under <c>HKCU\Software\Embarcadero</c> for this IDE profile (e.g. <c>BDS</c>).</summary>
     property RegistryKey: string read FRegistryKey;
+    /// <summary>Platform configurations read from <c>HKCU\Software\Embarcadero\{RegKey}\{BdsVersion}\Library</c>, keyed by platform name.</summary>
+    property Platforms: TDictionary<string, TProductPlatform> read GetPlatforms;
   end;
 
 implementation
@@ -174,6 +192,24 @@ function QueryFullProcessImageNameW(
     lpExeName: PWideChar;
     var lpdwSize: DWORD
 ): BOOL; stdcall; external 'kernel32.dll' name 'QueryFullProcessImageNameW';
+
+function NtQueryInformationProcess(
+    ProcessHandle: THandle;
+    ProcessInformationClass: ULONG;
+    ProcessInformation: Pointer;
+    ProcessInformationLength: ULONG;
+    ReturnLength: PULONG
+): LongInt; stdcall; external 'ntdll.dll' name 'NtQueryInformationProcess';
+
+type
+  // Mirror of the NT UNICODE_STRING. Not packed: natural alignment matches the
+  // C ABI on both Win32 (8 bytes) and Win64 (16 bytes, 4-byte padding before Buffer).
+  PNtUnicodeString = ^TNtUnicodeString;
+  TNtUnicodeString = record
+    Length: Word;
+    MaximumLength: Word;
+    Buffer: PWideChar;
+  end;
 
 // -- MSBuild location ----------------------------------------------------------
 
@@ -284,6 +320,14 @@ begin
   CloseHandle(hRead);
 end;
 
+// -- TProductPlatform ----------------------------------------------------------
+
+constructor TProductPlatform.Create(const AName: string);
+begin
+  inherited Create;
+  FName := AName;
+end;
+
 // -- TProduct ------------------------------------------------------------------
 
 constructor TProduct.Create(const ABdsVersion, AVersionName, ADisplayName, ARootDir, ARegistryKey: string);
@@ -296,6 +340,94 @@ begin
   FRegistryKey := ARegistryKey;
   if not PackageVersion.TryGetValue(FVersionName, FPackageVersion) then
     FPackageVersion := StringReplace(FBdsVersion, '.', '', [rfReplaceAll]);
+end;
+
+destructor TProduct.Destroy;
+begin
+  FPlatforms.Free;
+  inherited;
+end;
+
+procedure TProduct.LoadPlatforms;
+var
+  LReg: TRegistry;
+  LPlatformKeys: TStringList;
+  LActiveSDKs: TDictionary<string, Boolean>;
+begin
+  FPlatforms := TObjectDictionary<string, TProductPlatform>.Create([doOwnsValues]);
+
+  LReg := TRegistry.Create(KEY_READ);
+  try
+    LPlatformKeys := TStringList.Create;
+    try
+      LActiveSDKs := TDictionary<string, Boolean>.Create;
+      try
+        LReg.RootKey := HKEY_CURRENT_USER;
+
+        var LSdkPath := 'Software\Embarcadero\' + FRegistryKey + '\' + FBdsVersion + '\PlatformSDKs';
+        if LReg.OpenKeyReadOnly(LSdkPath) then
+        begin
+          var LValueNames := TStringList.Create;
+          try
+            LReg.GetValueNames(LValueNames);
+            for var LValueName in LValueNames do
+              LActiveSDKs.AddOrSetValue(LValueName.ToLower, True);
+          finally
+            LValueNames.Free;
+          end;
+          LReg.CloseKey;
+        end;
+
+        var LLibPath := 'Software\Embarcadero\' + FRegistryKey + '\' + FBdsVersion + '\Library';
+        if not LReg.OpenKeyReadOnly(LLibPath) then
+          Exit;
+        LReg.GetKeyNames(LPlatformKeys);
+        LReg.CloseKey;
+
+        for var LPlatformName in LPlatformKeys do
+        begin
+          if not LReg.OpenKeyReadOnly(LLibPath + '\' + LPlatformName) then
+            Continue;
+          try
+            var LPlatform := TProductPlatform.Create(LPlatformName);
+            // Hand ownership to FPlatforms immediately so a later raise cannot leak it.
+            FPlatforms.Add(LPlatformName, LPlatform);
+
+            if SameText(LPlatformName, 'Win32') or SameText(LPlatformName, 'Win64') then
+              LPlatform.Active := True
+            else
+              LPlatform.Active := LActiveSDKs.ContainsKey(('Default_' + LPlatformName).ToLower);
+
+            LPlatform.SearchPath :=
+                if LReg.ValueExists('Search Path') then LReg.ReadString('Search Path') else '';
+            LPlatform.HPPOutputDirectory :=
+                if LReg.ValueExists('HPP Output Directory') then LReg.ReadString('HPP Output Directory') else '';
+            LPlatform.PackageDCPOutput :=
+                if LReg.ValueExists('Package DCP Output') then LReg.ReadString('Package DCP Output') else '';
+            LPlatform.PackageDPLOutput :=
+                if LReg.ValueExists('Package DPL Output') then LReg.ReadString('Package DPL Output') else '';
+            LPlatform.PackageSearchPath :=
+                if LReg.ValueExists('Package Search Path') then LReg.ReadString('Package Search Path') else '';
+          finally
+            LReg.CloseKey;
+          end;
+        end;
+      finally
+        LActiveSDKs.Free;
+      end;
+    finally
+      LPlatformKeys.Free;
+    end;
+  finally
+    LReg.Free;
+  end;
+end;
+
+function TProduct.GetPlatforms: TDictionary<string, TProductPlatform>;
+begin
+  if FPlatforms = nil then
+    LoadPlatforms;
+  Result := FPlatforms;
 end;
 
 class constructor TProduct.Create;
@@ -464,30 +596,20 @@ begin
   end;
 end;
 
-class function TProduct.Find(const AProduct: string): TProduct;
-begin
-  for var P in FProducts do
-    if SameText(P.FDisplayName, AProduct) or SameText(P.FVersionName, AProduct) then
-      Exit(P);
-  raise Exception.CreateFmt('Product "%s" not found among installed Delphi versions.', [AProduct]);
-end;
-
-class function TProduct.FindByNameAndKey(const AVersionName, ARegistryKey: string): TProduct;
+class function TProduct.Find(const AVersionName: string; const ARegistryKey: string = 'BDS'): TProduct;
 begin
   for var P in FProducts do
     if SameText(P.FVersionName, AVersionName) and SameText(P.FRegistryKey, ARegistryKey) then
       Exit(P);
   raise Exception.CreateFmt(
-      'Product "%s" with registry key "%s" not found.', [AVersionName, ARegistryKey]);
+      'Product "%s" with registry key "%s" not found among installed Delphi versions.',
+      [AVersionName, ARegistryKey]);
 end;
 
-class function TProduct.Select(const AProduct: string): TProduct;
+class function TProduct.Choose: TProduct;
 begin
   if FProducts.Count = 0 then
     raise Exception.Create('No Delphi version found in the registry.');
-
-  if AProduct <> '' then
-    Exit(Find(AProduct));
 
   TConsole.WriteLine('Installed Delphi versions:', clGreen);
   for var I := 0 to FProducts.Count - 1 do
@@ -552,6 +674,56 @@ begin
 
 end;
 
+// Reads the command line of a process using NtQueryInformationProcess class 60
+// (ProcessCommandLineInformation, available Windows 8.1+).
+// Returns '' on failure (e.g. access denied, 64-bit target from 32-bit caller).
+function GetProcessCommandLine(AhProcess: THandle): string;
+const
+  ProcessCommandLineInformation = 60;
+var
+  LRequired: ULONG;
+  LBuf: TBytes;
+  LUS: PNtUnicodeString;
+  LOffset: NativeUInt;
+begin
+  Result := '';
+  try
+    LRequired := 0;
+    NtQueryInformationProcess(AhProcess, ProcessCommandLineInformation, nil, 0, @LRequired);
+    if LRequired < SizeOf(TNtUnicodeString) then
+      Exit;
+    SetLength(LBuf, LRequired);
+    if NtQueryInformationProcess(AhProcess, ProcessCommandLineInformation, @LBuf[0], LRequired, @LRequired) <> 0 then
+      Exit;
+    LUS := PNtUnicodeString(@LBuf[0]);
+    LOffset := NativeUInt(LUS.Buffer) - NativeUInt(@LBuf[0]);
+    if LOffset + LUS.Length > LRequired then
+      Exit;
+    SetLength(Result, LUS.Length div SizeOf(WideChar));
+    if LUS.Length > 0 then
+      Move(LBuf[LOffset], Result[1], LUS.Length);
+  except
+    Result := '';
+  end;
+end;
+
+// Extracts the registry key name from a bds.exe command line.
+// Returns 'BDS' (the default) when no -r/-R/+/r flag is present.
+function GetRegistryKeyFromCmdLine(const ACmdLine: string): string;
+var
+  LTokens: TArray<string>;
+  I: Integer;
+begin
+  Result := 'BDS';
+  LTokens := ACmdLine.Split([' ', #9], TStringSplitOptions.ExcludeEmpty);
+  for I := 0 to Length(LTokens) - 2 do
+    if SameText(LTokens[I], '-r') or SameText(LTokens[I], '/r') then
+    begin
+      Result := LTokens[I + 1].Trim(['"', '''']);
+      Exit;
+    end;
+end;
+
 function TProduct.IsRunning: Boolean;
 var
   Snapshot: THandle;
@@ -584,8 +756,20 @@ begin
               SetLength(ExePath, PathLen);
               if SameText(ExePath, BinPath) then
               begin
-                Result := True;
-                Exit;
+                var LCmdLine := GetProcessCommandLine(hProc);
+                // When we cannot read the command line (access denied, etc.) only
+                // the default 'BDS' profile is assumed — custom profiles need an
+                // explicit -r/+/r match to avoid false positives across profiles.
+                var LMatches: Boolean;
+                if LCmdLine = '' then
+                  LMatches := SameText(FRegistryKey, 'BDS')
+                else
+                  LMatches := SameText(GetRegistryKeyFromCmdLine(LCmdLine), FRegistryKey);
+                if LMatches then
+                begin
+                  Result := True;
+                  Exit;
+                end;
               end;
             end;
           finally

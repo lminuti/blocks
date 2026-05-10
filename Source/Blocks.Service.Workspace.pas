@@ -293,9 +293,9 @@ begin
 
   var LSelectedProduct: TProduct;
   if LProductName = '' then
-    LSelectedProduct := TProduct.Select('')
+    LSelectedProduct := TProduct.Choose
   else
-    LSelectedProduct := TProduct.FindByNameAndKey(
+    LSelectedProduct := TProduct.Find(
         LProductName,
         if LRegistryKey = '' then 'BDS' else LRegistryKey
     );
@@ -415,7 +415,7 @@ begin
     if LProduct = '' then
       raise Exception.Create(
           'No Delphi version configured. Run "blocks init /product <version>" first.');
-    var LSelectedProduct := TProduct.FindByNameAndKey(LProduct, Config.RegistryKey);
+    var LSelectedProduct := TProduct.Find(LProduct, Config.RegistryKey);
     TConsole.WriteLine('Selected version: ' + LSelectedProduct.DisplayName, clGreen);
     if not SameText(LSelectedProduct.RegistryKey, 'BDS') then
       TConsole.WriteLine('Registry key    : ' + LSelectedProduct.RegistryKey, clGreen);
@@ -541,7 +541,7 @@ begin
   if LProduct = '' then
     raise Exception.Create(
         'No Delphi version configured. Run "blocks init /product <version>" first.');
-  var LSelectedProduct := TProduct.FindByNameAndKey(LProduct, Config.RegistryKey);
+  var LSelectedProduct := TProduct.Find(LProduct, Config.RegistryKey);
   TConsole.WriteLine('Selected version: ' + LSelectedProduct.DisplayName, clGreen);
   if not SameText(LSelectedProduct.RegistryKey, 'BDS') then
     TConsole.WriteLine('Registry key    : ' + LSelectedProduct.RegistryKey, clGreen);
