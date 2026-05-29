@@ -26,6 +26,9 @@ uses
   Blocks.JSON;
 
 type
+  EManfestError = class(Exception)
+  end;
+
   // -----------------------------------------------------------------------
   // Application info
   // -----------------------------------------------------------------------
@@ -505,7 +508,9 @@ begin
             TPath.Combine(LPackageDir, LSemVers[0].ToString),
             LId + '.manifest.json');
         if not FileExists(LLatestManifestPath) then
-          Continue;
+        begin
+          raise EManfestError.CreateFmt('Manifest "%s" not found', [LLatestManifestPath]);
+        end;
 
         var LManifest: TManifest;
         var LJSON := TJSONObject.ParseJSONValue(TFile.ReadAllText(LLatestManifestPath), False, True);

@@ -151,6 +151,17 @@ type
     /// </remarks>
     procedure CheckDCPPath(const AWorkspaceDir: string);
 
+    /// <summary>Ensures the blocks BPL output directory (<c>{AWorkspaceDir}\.blocks\{Platform}\bpl</c>)
+    ///   is present in the PATH of the IDE environment variables for every supported platform.</summary>
+    /// <remarks>
+    ///   Idempotent: a platform whose PATH already contains the directory is left unchanged. Writes to
+    ///   <c>HKCU\Software\Embarcadero\{RegKey}\{BdsVersion}\Environment Variables</c> (Win32) and
+    ///   <c>...\Environment Variables x64</c> (Win64), creating the key if absent and initialising a
+    ///   missing PATH as <c>$(PATH);...</c> so the inherited PATH is preserved. Unlike
+    ///   <see cref="CheckDCPPath"/> this always runs; there is no configuration flag.
+    /// </remarks>
+    procedure CheckEnvironment(const AWorkspaceDir: string);
+
     /// <summary>Register package inside the Delphi IDE.</summary>
     procedure InstallPackage(
         APackage: TManifestPackage;
@@ -1114,6 +1125,55 @@ begin
   end;
 end;
 
+procedure TProduct.CheckEnvironment(const AWorkspaceDir: string);
+
+  function EnvVarsSubKey(const APlatform: string): string;
+  begin
+    if SameText(APlatform, 'Win64') then
+      Result := 'Environment Variables x64'
+    else
+      Result := 'Environment Variables';
+  end;
+
+begin
+  var LReg := TRegistry.Create(KEY_READ or KEY_WRITE);
+  try
+    LReg.RootKey := HKEY_CURRENT_USER;
+    for var LPlatform in DCPPlatforms do
+    begin
+      var LRegPath := 'Software\Embarcadero\' + FRegistryKey + '\' + FBdsVersion + '\' + EnvVarsSubKey(LPlatform);
+      // CanCreate: the Environment Variables key may not exist until the user
+      // defines an override; this method must register the path regardless.
+      if not LReg.OpenKey(LRegPath, True) then
+        Continue;
+      try
+        var LBplPath := TPath.Combine([AWorkspaceDir, '.blocks', LPlatform, 'bpl']);
+        var LExisting :=
+            if LReg.ValueExists('PATH') then LReg.ReadString('PATH')
+            else '';
+
+        if TArray.Contains<string>(LExisting.Split([';']), LBplPath, TIStringComparer.Ordinal) then
+          Continue;
+
+        // Keep the inherited PATH ($(PATH)) when creating the value from scratch.
+        var LNewValue: string;
+        if LExisting = '' then
+          LNewValue := '$(PATH);' + LBplPath
+        else if LExisting.EndsWith(';') then
+          LNewValue := LExisting + LBplPath
+        else
+          LNewValue := LExisting + ';' + LBplPath;
+        LReg.WriteString('PATH', LNewValue);
+        TConsole.WriteLine(Format('Registered bpl path for %s: %s', [LPlatform, LBplPath]), clGreen);
+      finally
+        LReg.CloseKey;
+      end;
+    end;
+  finally
+    LReg.Free;
+  end;
+end;
+
 procedure TProduct.BuildPackages(const AWorkspaceDir, AProjectDir, APackageFolder: string; const AManifest: TManifest);
 begin
   var BuildConfigs := ['debug', 'release'];
@@ -1201,8 +1261,10 @@ begin
             else '';
 
         LMSBuildParams :=
-            ' /p:DCC_UnitSearchPath="' + TPath.Combine(BlocksDir, LPlatform, 'dcp', LSuffix) + '"' +
-            ' /p:DCC_BplOutput="'
+            ' /p:DCC_UnitSearchPath="'
+                + TPath.Combine(BlocksDir, LPlatform, 'dcp', LSuffix)
+                + '"'
+                + ' /p:DCC_BplOutput="'
                 + TPath.Combine(BlocksDir, LPlatform, 'bpl', LSuffix)
                 + '"'
                 + ' /p:DCC_DcpOutput="'

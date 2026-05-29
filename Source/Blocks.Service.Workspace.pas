@@ -380,6 +380,8 @@ begin
 
   if Config.UpdateDCPSearchPath then
     LSelectedProduct.CheckDCPPath(AWorkDir);
+
+  LSelectedProduct.CheckEnvironment(AWorkDir);
 end;
 
 class procedure TWorkspace.RebuildIndex;

@@ -66,3 +66,5 @@ nul
 /AGENTS.md
 Demo/Workspace/workspace.json
 
+Demo/Workspace/*/
+
