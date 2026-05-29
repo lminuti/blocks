@@ -15,9 +15,13 @@ unit Blocks.Service.Workspace;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.IOUtils, System.Generics.Collections,
-  System.RegularExpressions, System.Types, System.Zip,
-
+  System.Classes,
+  System.SysUtils,
+  System.IOUtils,
+  System.Generics.Collections,
+  System.RegularExpressions,
+  System.Types,
+  System.Zip,
   Blocks.Model.Database,
   Blocks.Model.Config,
   Blocks.JSON,
@@ -39,6 +43,9 @@ type
     class function GetConfig: TConfig; static;
     class function GetDatabase: TDatabase; static;
     class procedure InitializeFromSource(const ASource: string); static;
+    /// <summary>Ensures <paramref name="ADir"/> does not exist before a fetch, applying the
+    ///   overwrite/prompt policy when it does.</summary>
+    class procedure EnsureCleanDir(const ADir: string; AOverwrite, ASilent: Boolean); static;
     /// <summary>Rebuilds <c>.blocks\repository\index.json</c> from the local repository.</summary>
     class procedure RebuildIndex; static;
     /// <summary>Resolves an install/uninstall argument to a package id (<c>vendor.name</c>).</summary>
@@ -50,7 +57,7 @@ type
     class function ResolvePackageId(const AArg: string; ASilent: Boolean = False): string; static;
     class procedure TestDelphiRunning(AProduct: TProduct); static;
     class constructor Create;
-    class destructor  Destroy;
+    class destructor Destroy;
   public
     /// <summary>Get a refernce to the database of installed packages.</summary>
     class property Database: TDatabase read GetDatabase;
@@ -59,6 +66,7 @@ type
     /// <summary>Initialises a directory as a Blocks workspace and sets <see cref="WorkDir"/>.</summary>
     /// <param name="AWorkDir">Directory to initialise as the workspace root.</param>
     /// <param name="AProduct">Target Delphi version name (e.g. <c>delphi13</c>); empty to select interactively.</param>
+    /// <param name="ASources">Comma-separated package source URL(s) to use; empty keeps the configured/default source.</param>
     /// <remarks>
     ///   Performs the following steps in order:
     ///   1. Sets <see cref="WorkDir"/> to <c>AWorkDir</c> and creates <see cref="BlocksDir"/> if absent.
@@ -68,7 +76,7 @@ type
     ///   4. Extracts the archive and installs <c>repository\</c> under <see cref="BlocksDir"/>.
     ///   Prompts the user before overwriting an existing repository folder.
     /// </remarks>
-    class procedure Initialize(const AWorkDir, AProduct, ARegistryKey: string); static;
+    class procedure Initialize(const AWorkDir, AProduct, ARegistryKey: string; const ASources: string = ''); static;
 
     /// <summary>Update the workspace by downloading the package list.</summary>
     class procedure Update(const AWorkDir: string); static;
@@ -80,8 +88,10 @@ type
     /// <param name="ABuildOnly">Skip download; compile the already-extracted project.</param>
     /// <param name="ASilent">Skip non-critical interactive prompts.</param>
     /// <param name="AForce">When <c>True</c>, log a warning on version conflict and continue instead of raising an exception.</param>
-    class procedure Install(const APackageName, AVersionConstraint: string;
-        AOverwrite, ABuildOnly, ASilent, AForce: Boolean); static;
+    class procedure Install(
+        const APackageName, AVersionConstraint: string;
+        AOverwrite, ABuildOnly, ASilent, AForce: Boolean
+    ); static;
 
     /// <summary>Removes a previously installed package from the workspace and the database.</summary>
     /// <param name="APackageName">Package id (<c>vendor.name</c>) or package name; resolved via the repository index.</param>
@@ -104,20 +114,25 @@ implementation
 
 uses
   System.JSON,
-
   Blocks.Console,
   Blocks.Http,
   Blocks.Model.Manifest,
-  Blocks.GitHub, Blocks.Model.Package;
+  Blocks.GitHub,
+  Blocks.Service.Fetcher,
+  Blocks.Model.Package;
 
 procedure ExpandMacros(var APath: string; AEnvironmentVariable: TStrings);
 begin
-  APath := RegExReplace(APath, '\$\(([^)]+)\)',
-    function(const AMatch: TMatch): string
-    begin
-      // Unknown macros resolve to '' — same as stripping the residual.
-      Result := AEnvironmentVariable.Values[AMatch.Groups[1].Value];
-    end);
+  APath :=
+      RegExReplace(
+          APath,
+          '\$\(([^)]+)\)',
+          function(const AMatch: TMatch): string
+          begin
+            // Unknown macros resolve to '' — same as stripping the residual.
+            Result := AEnvironmentVariable.Values[AMatch.Groups[1].Value];
+          end
+      );
 end;
 
 procedure NormalizePath(var APaths: TArray<string>; const ABasePath: string; AEnvironmentVariable: TStrings);
@@ -132,15 +147,23 @@ begin
   end;
 end;
 
-function GetDProjPath(const AProjectDir: string; AProduct: TProduct; AManifest: TManifest; APackageName: string): string;
+function GetDProjPath(
+    const AProjectDir: string;
+    AProduct: TProduct;
+    AManifest: TManifest;
+    APackageName: string
+): string;
 begin
   var LPackageFolder := AProduct.GetPackageFolder(AManifest.PackageOptions.Folders);
   var LPackagesPath := TPath.Combine(TPath.Combine(AProjectDir, 'packages'), LPackageFolder);
   Result := TPath.Combine(LPackagesPath, APackageName + '.dproj');
 end;
 
-function GetPlatformPaths(const AManifest: TManifest; const ADprojName, AProjectDir, APlatform: string;
-    AEnvironmentVariable: TStrings): TPlatformPaths;
+function GetPlatformPaths(
+    const AManifest: TManifest;
+    const ADprojName, AProjectDir, APlatform: string;
+    AEnvironmentVariable: TStrings
+): TPlatformPaths;
 begin
   var LPlatformManifest := AManifest.Platforms[APlatform];
   var LPackage := TPackageProject.LoadFromFile(ADprojName);
@@ -181,7 +204,6 @@ begin
     LPackage.Free;
   end;
 end;
-
 
 { TWorkspace }
 
@@ -227,7 +249,8 @@ end;
 
 class function TWorkspace.Exists: Boolean;
 begin
-  Result := TDirectory.Exists(TWorkspace.BlocksDir) and TFile.Exists(TPath.Combine(TWorkspace.BlocksDir, 'workspace.json'));
+  Result :=
+      TDirectory.Exists(TWorkspace.BlocksDir) and TFile.Exists(TPath.Combine(TWorkspace.BlocksDir, 'workspace.json'));
 end;
 
 class function TWorkspace.GetBlocksDir: string;
@@ -255,7 +278,9 @@ begin
       Exit(LMatches[0].Id);
 
     if ASilent then
-      raise Exception.CreateFmt('Package name "%s" is ambiguous: %d matches. Use the full id (vendor.name)', [AArg, Length(LMatches)]);
+      raise Exception.CreateFmt(
+          'Package name "%s" is ambiguous: %d matches. Use the full id (vendor.name)',
+          [AArg, Length(LMatches)]);
 
     TConsole.WriteLine(Format('Multiple packages match name "%s":', [AArg]), clYellow);
     for var I := 0 to High(LMatches) do
@@ -272,7 +297,31 @@ begin
   end;
 end;
 
-class procedure TWorkspace.Initialize(const AWorkDir, AProduct, ARegistryKey: string);
+class procedure TWorkspace.EnsureCleanDir(const ADir: string; AOverwrite, ASilent: Boolean);
+begin
+  if not TDirectory.Exists(ADir) then
+    Exit;
+
+  if AOverwrite then
+  begin
+    TDirectory.Delete(ADir, True);
+    TConsole.WriteLine(Format('Directory "%s" removed.', [ADir]), clYellow);
+  end
+  else if ASilent then
+    raise Exception.CreateFmt('Directory "%s" already exists. Use /overwrite to replace it.', [ADir])
+  else
+  begin
+    TConsole.WriteLine(Format('Directory "%s" already exists.', [ADir]), clYellow);
+    TConsole.Write('Overwrite? [Y/N] (default: N): ');
+    var LConfirm := TConsole.ReadLine;
+    if not SameText(Trim(LConfirm), 'Y') then
+      raise Exception.Create('Operation cancelled by user.');
+    TDirectory.Delete(ADir, True);
+    TConsole.WriteLine('Directory removed.', clYellow);
+  end;
+end;
+
+class procedure TWorkspace.Initialize(const AWorkDir, AProduct, ARegistryKey: string; const ASources: string);
 begin
   SetWorkDir(AWorkDir);
 
@@ -281,6 +330,9 @@ begin
     TDirectory.CreateDirectory(GetBlocksDir);
     TConsole.WriteLine('Created: ' + GetBlocksDir, clGreen);
   end;
+
+  if ASources <> '' then
+    Config.&Set('sources', ASources);
 
   // Select Delphi version: explicit /product wins; else reuse the one already
   // saved in the workspace config; else prompt interactively.
@@ -297,10 +349,12 @@ begin
   if LProductName = '' then
     LSelectedProduct := TProduct.Choose
   else
-    LSelectedProduct := TProduct.Find(
-        LProductName,
-        if LRegistryKey = '' then 'BDS' else LRegistryKey
-    );
+    LSelectedProduct :=
+        TProduct.Find(
+            LProductName,
+            if LRegistryKey = '' then 'BDS'
+            else LRegistryKey
+        );
   Config.Product := LSelectedProduct.VersionName;
   Config.RegistryKey := LSelectedProduct.RegistryKey;
   Config.Save;
@@ -323,6 +377,9 @@ begin
     InitializeFromSource(LSource);
 
   RebuildIndex;
+
+  if Config.UpdateDCPSearchPath then
+    LSelectedProduct.CheckDCPPath(AWorkDir);
 end;
 
 class procedure TWorkspace.RebuildIndex;
@@ -418,8 +475,10 @@ begin
   FDelphiRunningContinue := True;
 end;
 
-class procedure TWorkspace.Install(const APackageName, AVersionConstraint: string;
-    AOverwrite, ABuildOnly, ASilent, AForce: Boolean);
+class procedure TWorkspace.Install(
+    const APackageName, AVersionConstraint: string;
+    AOverwrite, ABuildOnly, ASilent, AForce: Boolean
+);
 begin
   var LPackageId := ResolvePackageId(APackageName, ASilent);
   var LManifest := TManifest.GetManifest(LPackageId, AVersionConstraint);
@@ -433,8 +492,7 @@ begin
     // Step 3 — Delphi version (read from workspace configuration)
     var LProduct := Config.Product;
     if LProduct = '' then
-      raise Exception.Create(
-          'No Delphi version configured. Run "blocks init /product <version>" first.');
+      raise Exception.Create('No Delphi version configured. Run "blocks init /product <version>" first.');
     var LSelectedProduct := TProduct.Find(LProduct, Config.RegistryKey);
     TConsole.WriteLine('Selected version: ' + LSelectedProduct.DisplayName, clGreen);
     if not SameText(LSelectedProduct.RegistryKey, 'BDS') then
@@ -461,8 +519,11 @@ begin
           if AForce then
           begin
             TConsole.WriteWarning(
-                Format('Version conflict: %s installed %s, required %s — skipping (/force)',
-                [LManifest.Id, LInstalledVer, AVersionConstraint]));
+                Format(
+                    'Version conflict: %s installed %s, required %s — skipping (/force)',
+                    [LManifest.Id, LInstalledVer, AVersionConstraint]
+                )
+            );
             TConsole.WriteLine;
             Exit;
           end
@@ -489,15 +550,13 @@ begin
     var LProjectDir: string;
     if not ABuildOnly then
     begin
-      // Step 7 — Build zip URL from repository URL and download
-      // Repository URL format: https://github.com/owner/repo/tree/ref
+      // Step 7 — Fetch the package sources according to the repository type
       TConsole.WriteLine('--- ' + LManifest.Id + ' / ' + LManifest.Name + ' ---', clWhite);
       TConsole.WriteLine('Version: ' + LManifest.Version, clCyan);
-      var LRepoParts := TrimRight(LManifest.Repository.Url, ['/']).Split(['/']);
-      if Length(LRepoParts) < 7 then
-        raise Exception.CreateFmt('Cannot parse repository URL: %s', [LManifest.Repository.Url]);
-      var LZipUrl := TGitHub.GetGitHubZipUrl(LRepoParts[3], LRepoParts[4], LRepoParts[6]);
-      LProjectDir := TGitHub.DownloadAndExtract(LZipUrl, WorkDir, LManifest.Name, AOverwrite, ASilent);
+      LProjectDir := TPath.Combine(WorkDir, LManifest.Name);
+      EnsureCleanDir(LProjectDir, AOverwrite, ASilent);
+      var LFetcher := TRepositoryFetcher.ForRepository(LManifest.Repository);
+      LFetcher.FetchTo(LManifest.Repository, LProjectDir);
       TConsole.WriteLine('Project downloaded to: ' + LProjectDir, clGreen);
       TConsole.WriteLine;
     end
@@ -524,7 +583,8 @@ begin
         for var LPackage in LManifest.Packages do
         begin
           var DprojPath := TPath.Combine(LPackagesPath, LPackage.Name + '.dproj');
-          var LPlatformPaths := GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);
+          var LPlatformPaths :=
+              GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);
           LSelectedProduct.UpdateSearchPaths(LPlatformPair.Key, LProjectDir, LPlatformPaths);
         end;
       end;
@@ -560,8 +620,7 @@ begin
   // Step 3 — Delphi version (read from workspace configuration)
   var LProduct := Config.Product;
   if LProduct = '' then
-    raise Exception.Create(
-        'No Delphi version configured. Run "blocks init /product <version>" first.');
+    raise Exception.Create('No Delphi version configured. Run "blocks init /product <version>" first.');
   var LSelectedProduct := TProduct.Find(LProduct, Config.RegistryKey);
   TConsole.WriteLine('Selected version: ' + LSelectedProduct.DisplayName, clGreen);
   if not SameText(LSelectedProduct.RegistryKey, 'BDS') then
@@ -598,7 +657,8 @@ begin
             if LPackage.IsDesignTime then
               LSelectedProduct.UninstallPackage(LPackage, WorkDir, DprojPath, LPlatformPair);
 
-            var LPlatformPaths := GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);
+            var LPlatformPaths :=
+                GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);
             LSelectedProduct.DeleteSearchPaths(LPlatformPair.Key, LProjectDir, LPlatformPaths);
 
             LSelectedProduct.RemovePackage(WorkDir, LPackageProject, LPlatformPair);

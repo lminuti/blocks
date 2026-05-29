@@ -15,13 +15,15 @@ unit Blocks.CLI.App;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.IOUtils, System.TypInfo,
-  System.Rtti, System.StrUtils,
+  System.SysUtils,
+  System.Classes,
+  System.IOUtils,
+  System.TypInfo,
+  System.Rtti,
+  System.StrUtils,
   System.Generics.Collections,
-
   Winapi.Windows,
   Winapi.ShellAPI,
-
   Blocks.Service.Product,
   Blocks.GitHub,
   Blocks.CLI.Command;
@@ -76,6 +78,10 @@ type
     FProduct: string;
     [Param('registrykey')]
     FRegistryKey: string;
+    [Param('source')]
+    FSource: string;
+    [Param('sources')]
+    FSources: string;
   public
     procedure Execute; override;
     procedure ShowHelp; override;
@@ -261,8 +267,7 @@ begin
   inherited;
   var LProductName := TWorkspace.Config.Product;
   if LProductName = '' then
-    raise Exception.Create(
-        'No Delphi version configured. Run "blocks init -product <version>" first.');
+    raise Exception.Create('No Delphi version configured. Run "blocks init -product <version>" first.');
   ListBlocks(TProduct.Find(LProductName, TWorkspace.Config.RegistryKey));
 end;
 
@@ -319,7 +324,16 @@ procedure TProductCommand.Execute;
     TConsole.WriteLine(Format('    %-22s %s', ['BDS Version:', AProduct.BdsVersion]));
     TConsole.WriteLine(Format('    %-22s %s', ['Root Dir:', AProduct.RootDir]));
     TConsole.WriteLine(Format('    %-22s %s', ['Registry Key:', AProduct.RegistryKey]));
-    TConsole.WriteLine(Format('    %-22s %s', ['Running:', if AProduct.IsRunning then 'Yes' else 'No']));
+    TConsole.WriteLine(
+        Format(
+            '    %-22s %s',
+            [
+                'Running:',
+                if AProduct.IsRunning then 'Yes'
+                else 'No'
+            ]
+        )
+    );
     for var LPlatform in AProduct.Platforms.Values do
     begin
       if not LPlatform.Active then
@@ -363,7 +377,9 @@ begin
     begin
       var LParts := LArg.Split([':'], 2);
       var LVersionName := LParts[0];
-      var LRegistryKey := if Length(LParts) > 1 then LParts[1] else 'BDS';
+      var LRegistryKey :=
+          if Length(LParts) > 1 then LParts[1]
+          else 'BDS';
       ShowDetail(TProduct.Find(LVersionName, LRegistryKey));
     end;
     Exit;
@@ -428,9 +444,15 @@ begin
   end
   else
   begin
+    var LSources := FSource;
+    if FSources <> '' then
+      if LSources <> '' then
+        LSources := LSources + ',' + FSources
+      else
+        LSources := FSources;
     TConsole.WriteLine('Initialising workspace: ' + GetCurrentDir, clWhite);
     TConsole.WriteLine;
-    TWorkspace.Initialize(GetCurrentDir, FProduct, FRegistryKey);
+    TWorkspace.Initialize(GetCurrentDir, FProduct, FRegistryKey, LSources);
     TConsole.WriteLine('Workspace initialised.', clGreen);
     TConsole.WriteLine;
   end;
@@ -451,9 +473,13 @@ begin
   WriteOption('', 'Run "' + AppExeName + ' product" to see valid values.');
   WriteOption('/registrykey <key>', 'Registry profile key (default: BDS).');
   WriteOption('', 'Use this when Delphi is started with -r <key>.');
+  WriteOption('/source <url>', 'Package source(s) to use instead of the default.');
+  WriteOption('/sources <url>', 'Alias of /source. Separate multiple sources with commas.');
   TConsole.WriteLine;
   TConsole.WriteLine('Examples:', clWhite);
   TConsole.WriteLine('  ' + AppExeName + ' init');
+  TConsole.WriteLine('  ' + AppExeName + ' init /source https://github.com/owner/repo');
+  TConsole.WriteLine('  ' + AppExeName + ' init /sources https://github.com/a/r1,https://github.com/b/r2');
   TConsole.WriteLine;
 end;
 
@@ -617,12 +643,30 @@ end;
 procedure TBaseCommand.ShowBanner(const AppName, Description: string);
 begin
   TConsole.WriteLine;
-  TConsole.WriteLine(' ██████╗ ██╗      ██████╗  ██████╗██╗  ██╗███████╗', clCyan);
-  TConsole.WriteLine(' ██╔══██╗██║     ██╔═══██╗██╔════╝██║ ██╔╝██╔════╝', clCyan);
-  TConsole.WriteLine(' ██████╔╝██║     ██║   ██║██║     █████╔╝ ███████╗', clCyan);
-  TConsole.WriteLine(' ██╔══██╗██║     ██║   ██║██║     ██╔═██╗ ╚════██║', clCyan);
-  TConsole.WriteLine(' ██████╔╝███████╗╚██████╔╝╚██████╗██║  ██╗███████║', clCyan);
-  TConsole.WriteLine(' ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝', clDkCyan);
+  TConsole.WriteLine(
+      ' ██████╗ ██╗      ██████╗  ██████╗██╗  ██╗███████╗',
+      clCyan
+  );
+  TConsole.WriteLine(
+      ' ██╔══██╗██║     ██╔═══██╗██╔════╝██║ ██╔╝██╔════╝',
+      clCyan
+  );
+  TConsole.WriteLine(
+      ' ██████╔╝██║     ██║   ██║██║     █████╔╝ ███████╗',
+      clCyan
+  );
+  TConsole.WriteLine(
+      ' ██╔══██╗██║     ██║   ██║██║     ██╔═██╗ ╚════██║',
+      clCyan
+  );
+  TConsole.WriteLine(
+      ' ██████╔╝███████╗╚██████╔╝╚██████╗██║  ██╗███████║',
+      clCyan
+  );
+  TConsole.WriteLine(
+      ' ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝',
+      clDkCyan
+  );
   TConsole.WriteLine('   ▸  Delphi Package Installer', clDkCyan);
   TConsole.WriteLine;
 
@@ -713,6 +757,8 @@ begin
       TConsole.WriteLine('Config applied');
       if not FSystem and SameText(LKey, 'sources') then
         TConsole.WriteWarning('Run "' + AppExeName + ' init" to refresh the repository with the new sources.');
+      if not FSystem and SameText(LKey, 'updatedcpsearchpath') then
+        TConsole.WriteWarning('Run "' + AppExeName + ' init" to apply the search path change.');
     end;
   end;
 end;
@@ -740,6 +786,9 @@ begin
   WriteOption('', 'the local repository.');
   WriteOption('product', 'Target Delphi version name (e.g. delphi12, delphi13).');
   WriteOption('registrykey', 'Registry profile key for the target Delphi IDE (default: BDS).');
+  WriteOption('updatedcpsearchpath', 'When true, "init" adds the blocks DCP output directory to the');
+  WriteOption('', 'Delphi library Search Path (true/false, default: false).');
+  WriteOption('', 'After changing this key, run "' + AppExeName + ' init" to apply.');
   TConsole.WriteLine;
   TConsole.WriteLine('System keys:', clWhite);
   WriteOption('InstallPath', 'Specifies the directory containing the blocks.exe to launch');
@@ -755,6 +804,7 @@ begin
   TConsole.WriteLine('  ' + AppExeName + ' config /delete sources=https://github.com/owner/other-repo');
   TConsole.WriteLine('  ' + AppExeName + ' config product');
   TConsole.WriteLine('  ' + AppExeName + ' config registrykey=myprofile');
+  TConsole.WriteLine('  ' + AppExeName + ' config updatedcpsearchpath=true');
   TConsole.WriteLine('  ' + AppExeName + ' config /system InstallPath');
   TConsole.WriteLine('  ' + AppExeName + ' config /system InstallPath=C:\Tools\Blocks');
   TConsole.WriteLine;
@@ -796,15 +846,14 @@ begin
   var LPackageVersion := '';
   var LPackageNamePair := FPackage.Split(['@']);
   case Length(LPackageNamePair) of
-    1:
-      LPackageName := LPackageNamePair[0];
+    1: LPackageName := LPackageNamePair[0];
     2:
     begin
       LPackageName := LPackageNamePair[0];
       LPackageVersion := LPackageNamePair[1];
     end;
-    else
-      raise Exception.Create('Package id should be in the form vendor.name@version');
+  else
+    raise Exception.Create('Package id should be in the form vendor.name@version');
   end;
 
   var LManifest := TManifest.GetManifest(LPackageName, LPackageVersion);
@@ -817,33 +866,35 @@ begin
 
     const LabelW = 13;
     var LField: TProc<string, string>;
-    LField := procedure(ALabel, AValue: string)
-      begin
-        if AValue = '' then
-          Exit;
-        TConsole.Write('  ' + ALabel.PadRight(LabelW), clCyan);
-        TConsole.WriteLine('▸  ' + AValue);
-      end;
+    LField :=
+        procedure(ALabel, AValue: string)
+        begin
+          if AValue = '' then
+            Exit;
+          TConsole.Write('  ' + ALabel.PadRight(LabelW), clCyan);
+          TConsole.WriteLine('▸  ' + AValue);
+        end;
 
     var LSection: TProc<string>;
-    LSection := procedure(ATitle: string)
-      begin
-        TConsole.WriteLine;
-        TConsole.Write('  ', clDkGray);
-        TConsole.WriteLine(ATitle, clWhite);
-        TConsole.WriteLine('  ' + StringOfChar('─', 44), clDkGray);
-      end;
+    LSection :=
+        procedure(ATitle: string)
+        begin
+          TConsole.WriteLine;
+          TConsole.Write('  ', clDkGray);
+          TConsole.WriteLine(ATitle, clWhite);
+          TConsole.WriteLine('  ' + StringOfChar('─', 44), clDkGray);
+        end;
 
     TConsole.WriteLine;
     TConsole.WriteLine('  ' + LManifest.Name + '  ' + LManifest.Version, clWhite);
     TConsole.WriteLine('  ' + StringOfChar('─', 44), clDkGray);
     TConsole.WriteLine;
 
-    LField('Id',          LManifest.Id);
-    LField('Author',      LManifest.Author);
-    LField('License',     LManifest.License);
-    LField('Homepage',    LManifest.Homepage);
-    LField('Repository',  LManifest.Repository.Url);
+    LField('Id', LManifest.Id);
+    LField('Author', LManifest.Author);
+    LField('License', LManifest.License);
+    LField('Homepage', LManifest.Homepage);
+    LField('Repository', LManifest.Repository.Url);
 
     if LManifest.Description <> '' then
     begin
@@ -898,8 +949,7 @@ begin
         end;
 
         var LDepSemVer: TSemVer;
-        var LCompatible := TSemVer.TryParse(LDepInstalled, LDepSemVer)
-            and LDepSemVer.MatchesConstraint(LDep.Value);
+        var LCompatible := TSemVer.TryParse(LDepInstalled, LDepSemVer) and LDepSemVer.MatchesConstraint(LDep.Value);
         if LCompatible then
           TConsole.WriteLine('installed ' + LDepInstalled, clGreen)
         else
@@ -1027,7 +1077,8 @@ begin
     if LBrowserDownloadUrl = '' then
       Exit;
 
-    var LDestinationPath := TPath.Combine(TPath.GetTempPath, '.blocks', THttpUtils.ExtractFileName(LBrowserDownloadUrl));
+    var LDestinationPath :=
+        TPath.Combine(TPath.GetTempPath, '.blocks', THttpUtils.ExtractFileName(LBrowserDownloadUrl));
     TConsole.WriteLine('Downloading to: ' + LDestinationPath);
     ForceDirectories(ExtractFilePath(LDestinationPath));
 
@@ -1114,16 +1165,16 @@ end;
 
 initialization
 
-TCommand.RegisterCommand('help', THelpCommand, True);
-TCommand.RegisterCommand('list', TListCommand);
-TCommand.RegisterCommand('product', TProductCommand);
-TCommand.RegisterCommand('init', TInitCommand);
-TCommand.RegisterCommand('install', TInstallCommand);
-TCommand.RegisterCommand('uninstall', TUninstallCommand);
-TCommand.RegisterCommand('search', TSearchCommand);
-TCommand.RegisterCommand('config', TConfigCommand);
-TCommand.RegisterCommand('view', TViewCommand);
-TCommand.RegisterCommand('version', TVersionCommand);
-TCommand.RegisterCommand('upgrade', TUpgradeCommand);
+  TCommand.RegisterCommand('help', THelpCommand, True);
+  TCommand.RegisterCommand('list', TListCommand);
+  TCommand.RegisterCommand('product', TProductCommand);
+  TCommand.RegisterCommand('init', TInitCommand);
+  TCommand.RegisterCommand('install', TInstallCommand);
+  TCommand.RegisterCommand('uninstall', TUninstallCommand);
+  TCommand.RegisterCommand('search', TSearchCommand);
+  TCommand.RegisterCommand('config', TConfigCommand);
+  TCommand.RegisterCommand('view', TViewCommand);
+  TCommand.RegisterCommand('version', TVersionCommand);
+  TCommand.RegisterCommand('upgrade', TUpgradeCommand);
 
 end.

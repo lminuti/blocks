@@ -3,9 +3,10 @@ unit Blocks.GitHub;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.IOUtils,
-  System.Generics.Collections, System.Zip, System.JSON,
-
+  System.Classes,
+  System.SysUtils,
+  System.Generics.Collections,
+  System.JSON,
   Blocks.JSON;
 
 type
@@ -62,20 +63,6 @@ type
     /// <returns>A <see cref="TGitHubInfo"/> record with owner, repo name, default branch,
     ///   and the latest commit SHA on that branch.</returns>
     class function GetGitHubInfo(const RepoUrl: string): TGitHubInfo; static;
-    /// <summary>Downloads and extracts a GitHub zipball archive into the workspace.</summary>
-    /// <param name="ZipUrl">URL of the GitHub zipball archive to download.</param>
-    /// <param name="DestinationDir">Workspace root; the extracted project is placed at
-    ///   <c>DestinationDir\ProjectName</c>. The temporary download directory is created under
-    ///   <c>DestinationDir\.blocks\download\</c> and removed after extraction.</param>
-    /// <param name="ProjectName">Name of the target subfolder for the extracted project.</param>
-    /// <param name="Overwrite">When <c>True</c>, an existing project directory is silently deleted
-    ///   before the archive is extracted.</param>
-    /// <param name="Silent">When <c>True</c>, raises an exception instead of prompting the user
-    ///   when a directory conflict is detected and <c>Overwrite</c> is <c>False</c>.</param>
-    /// <returns>Full path to the final extracted project directory.</returns>
-    /// <remarks>GitHub wraps repository content in a generated top-level folder
-    ///   (e.g. <c>owner-repo-abc1234/</c>); this function unwraps it automatically.</remarks>
-    class function DownloadAndExtract(const ZipUrl, DestinationDir, ProjectName: string; Overwrite, Silent: Boolean): string; static;
   end;
 
 implementation
@@ -83,66 +70,9 @@ implementation
 { TGitHub }
 
 uses
-  Winapi.Windows,
   Blocks.Http,
   Blocks.Console,
   Blocks.Core;
-
-class function TGitHub.DownloadAndExtract(const ZipUrl, DestinationDir,
-  ProjectName: string; Overwrite, Silent: Boolean): string;
-begin
-  var BlocksDir := TPath.Combine(DestinationDir, '.blocks');
-  var DownloadDir := TPath.Combine(BlocksDir, 'download');
-  var ZipPath := TPath.Combine(DownloadDir, 'download.zip');
-
-  if TDirectory.Exists(DownloadDir) then
-    TDirectory.Delete(DownloadDir, True);
-  TDirectory.CreateDirectory(DownloadDir);
-
-  TConsole.WriteLine('Downloading...', clCyan);
-  THttpUtils.DownloadFile(ZipUrl, ZipPath);
-
-  TConsole.WriteLine('Extracting...', clCyan);
-  var ExtractDir := TPath.Combine(DownloadDir, 'extract');
-  TDirectory.CreateDirectory(ExtractDir);
-  TZipFile.ExtractZipFile(ZipPath, ExtractDir);
-
-  // GitHub places content inside a single subdirectory (e.g. "owner-repo-abc1234")
-  var InnerDirs := TDirectory.GetDirectories(ExtractDir);
-  if Length(InnerDirs) = 0 then
-    raise Exception.Create('Unexpected zip structure: no subdirectory found.');
-  var InnerDir := InnerDirs[0];
-
-  var FinalPath := TPath.Combine(DestinationDir, ProjectName);
-
-  if TDirectory.Exists(FinalPath) then
-  begin
-    if Overwrite then
-    begin
-      TDirectory.Delete(FinalPath, True);
-      TConsole.WriteLine(Format('Directory "%s" removed.', [FinalPath]), clYellow);
-    end
-    else if Silent then
-      raise Exception.CreateFmt('Directory "%s" already exists. Use -Overwrite to replace it.', [FinalPath])
-    else
-    begin
-      TConsole.WriteLine(Format('Directory "%s" already exists.', [FinalPath]), clYellow);
-      TConsole.Write('Overwrite? [Y/N] (default: N): ');
-      var Confirm := TConsole.ReadLine;
-      if not SameText(Trim(Confirm), 'Y') then
-        raise Exception.Create('Operation cancelled by user.');
-      TDirectory.Delete(FinalPath, True);
-      TConsole.WriteLine('Directory removed.', clYellow);
-    end;
-  end;
-
-  if not MoveFileEx(PChar(InnerDir), PChar(FinalPath), MOVEFILE_COPY_ALLOWED) then
-    RaiseLastOSError;
-
-  TDirectory.Delete(DownloadDir, True);
-
-  Result := FinalPath;
-end;
 
 class function TGitHub.GetGitHubInfo(const RepoUrl: string): TGitHubInfo;
 var

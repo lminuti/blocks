@@ -14,6 +14,7 @@ uses
   Blocks.Model.Database in 'Blocks.Model.Database.pas',
   Blocks.Model.Manifest in 'Blocks.Model.Manifest.pas',
   Blocks.Service.Workspace in 'Blocks.Service.Workspace.pas',
+  Blocks.Service.Fetcher in 'Blocks.Service.Fetcher.pas',
   Blocks.Service.Product in 'Blocks.Service.Product.pas',
   Blocks.JSON in 'Blocks.JSON.pas',
   Blocks.CLI.Command in 'Blocks.CLI.Command.pas',

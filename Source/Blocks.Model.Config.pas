@@ -3,7 +3,10 @@ unit Blocks.Model.Config;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.IOUtils, System.JSON;
+  System.Classes,
+  System.SysUtils,
+  System.IOUtils,
+  System.JSON;
 
 type
   TConfig = class(TObject)
@@ -12,12 +15,16 @@ type
     FProduct: string;
     FRegistryKey: string;
     FWorkspaceDir: string;
+    FUpdateDCPSearchPath: Boolean;
     function ConfigPath: string;
   public
     property Sources: TStringList read FSources;
 
     property Product: string read FProduct write FProduct;
     property RegistryKey: string read FRegistryKey write FRegistryKey;
+    /// <summary>When True, "init" registers the blocks DCP output directory on the
+    ///   Delphi library Search Path (see <c>TProduct.CheckDCPPath</c>). Default False.</summary>
+    property UpdateDCPSearchPath: Boolean read FUpdateDCPSearchPath write FUpdateDCPSearchPath;
 
     procedure Load;
     procedure Save;
@@ -56,6 +63,15 @@ begin
     FProduct := AValue
   else if SameText(AKey, 'registrykey') then
     FRegistryKey := AValue
+  else if SameText(AKey, 'updatedcpsearchpath') then
+  begin
+    if SameText(AValue, 'true') then
+      FUpdateDCPSearchPath := True
+    else if SameText(AValue, 'false') then
+      FUpdateDCPSearchPath := False
+    else
+      raise Exception.CreateFmt('Invalid boolean value "%s" for "%s" (use true or false)', [AValue, AKey]);
+  end
   else
     raise Exception.CreateFmt('Config "%s" does not exists', [AKey]);
 end;
@@ -94,6 +110,7 @@ begin
   FSources := TStringList.Create;
   FSources.Add(DefaultBlocksRepositoryUrl);
   FRegistryKey := 'BDS';
+  FUpdateDCPSearchPath := False;
 end;
 
 destructor TConfig.Destroy;
@@ -110,6 +127,13 @@ begin
     Result := FProduct
   else if SameText(AKey, 'registrykey') then
     Result := FRegistryKey
+  else if SameText(AKey, 'updatedcpsearchpath') then
+  begin
+    if FUpdateDCPSearchPath then
+      Result := 'true'
+    else
+      Result := 'false';
+  end
   else
     raise Exception.CreateFmt('Config "%s" does not exists', [AKey]);
 end;
