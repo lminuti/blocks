@@ -15,16 +15,52 @@ unit Blocks.CLI.Command;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.Rtti, System.TypInfo, System.IOUtils,
+  System.Classes,
+  System.SysUtils,
+  System.Rtti,
+  System.TypInfo,
+  System.IOUtils,
   System.Generics.Collections;
 
 type
+  /// <summary>
+  ///   Marks a command field as a CLI parameter
+  /// </summary>
   ParamAttribute = class(TCustomAttribute)
   private
-    FParamName: string;
+    FParamNames: TArray<string>;
   public
-    property ParamName: string read FParamName;
-    constructor Create(const AParamName: string = '');
+    // All the names (aliases) that select this parameter. Empty for the
+    // unnamed (positional) parameter.
+    property ParamNames: TArray<string> read FParamNames;
+
+    /// <summary>
+    ///   True for the unnamed (positional) parameter, i.e. the one that has no
+    ///   name/alias.
+    /// </summary>
+    function IsUnnamed: Boolean;
+
+    /// <summary>
+    ///   Returns True when AParamName (the raw command-line argument, including
+    ///   its leading slash, e.g. '/product') matches any of this parameter's
+    ///   names/aliases. The comparison is case-insensitive.
+    /// </summary>
+    function HandlesParam(const AParamName: string): Boolean;
+
+    /// <summary>
+    ///   Creates the parameter. Pass no name (or '') for the unnamed
+    ///   (positional) parameter, one name for a regular option, or several
+    ///   names to register aliases for the same field, e.g.
+    ///     [Param('source', 'sources')]   // both /source and /sources
+    ///   (Delphi attribute arguments cannot be arrays, hence the fixed list of
+    ///   optional alias parameters.)
+    /// </summary>
+    constructor Create(
+        const AParamName: string = '';
+        const AAlias1: string = '';
+        const AAlias2: string = '';
+        const AAlias3: string = ''
+    );
   end;
 
   TCommand = class;
@@ -38,9 +74,12 @@ type
 
   TCommand = class(TObject)
   strict private
-    class var FRegistry: TDictionary<string, TCommandClass>;
-    class var FDefaultCommand: TCommandClass;
-    class var FContext: TRttiContext;
+    class var
+      FRegistry: TDictionary<string, TCommandClass>;
+    class var
+      FDefaultCommand: TCommandClass;
+    class var
+      FContext: TRttiContext;
     class function FindCommand(const ACommandName: string): TCommandClass;
     constructor InnerCreate;
   public
@@ -170,11 +209,11 @@ class procedure TCommand.InjectArgs(ACommand: TCommand; AParams: IParamReader);
       if Assigned(LAttr) then
       begin
         // If it finds an unnamed param set the LDefaultParam
-        if LAttr.ParamName = '' then
+        if LAttr.IsUnnamed then
           LDefaultParam := F;
 
-        if SameText('/' + LAttr.ParamName, AParamName) then
-         Exit(F);
+        if LAttr.HandlesParam(AParamName) then
+          Exit(F);
       end;
     end;
     if AParamName.StartsWith('/') or not Assigned(LDefaultParam) then
@@ -258,10 +297,35 @@ end;
 
 { ParamAttribute }
 
-constructor ParamAttribute.Create(const AParamName: string);
+constructor ParamAttribute.Create(
+    const AParamName: string;
+    const AAlias1: string;
+    const AAlias2: string;
+    const AAlias3: string
+);
 begin
   inherited Create;
-  FParamName := AParamName;
+  FParamNames := [];
+  // Keep only the non-empty names; an empty AParamName yields the unnamed
+  // (positional) parameter.
+  for var LName in [AParamName, AAlias1, AAlias2, AAlias3] do
+    if LName <> '' then
+      FParamNames := FParamNames + [LName];
+end;
+
+function ParamAttribute.IsUnnamed: Boolean;
+begin
+  Result := Length(FParamNames) = 0;
+end;
+
+function ParamAttribute.HandlesParam(const AParamName: string): Boolean;
+begin
+  for var LName in FParamNames do
+  begin
+    if SameText('/' + LName, AParamName) then
+      Exit(True);
+  end;
+  Result := False;
 end;
 
 { TCommandLineParamReader }

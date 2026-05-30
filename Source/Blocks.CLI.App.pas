@@ -78,10 +78,8 @@ type
     FProduct: string;
     [Param('registrykey')]
     FRegistryKey: string;
-    [Param('source')]
+    [Param('source', 'sources')]
     FSource: string;
-    [Param('sources')]
-    FSources: string;
   public
     procedure Execute; override;
     procedure ShowHelp; override;
@@ -444,15 +442,9 @@ begin
   end
   else
   begin
-    var LSources := FSource;
-    if FSources <> '' then
-      if LSources <> '' then
-        LSources := LSources + ',' + FSources
-      else
-        LSources := FSources;
     TConsole.WriteLine('Initialising workspace: ' + GetCurrentDir, clWhite);
     TConsole.WriteLine;
-    TWorkspace.Initialize(GetCurrentDir, FProduct, FRegistryKey, LSources);
+    TWorkspace.Initialize(GetCurrentDir, FProduct, FRegistryKey, FSource);
     TConsole.WriteLine('Workspace initialised.', clGreen);
     TConsole.WriteLine;
   end;
