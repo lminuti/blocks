@@ -51,6 +51,18 @@ type
     procedure ShowHelp; override;
   end;
 
+  /// <summary>
+  ///   Runs when blocks is invoked with no command (and as the fallback for an
+  ///   unrecognised one). Shows the banner plus a short status: the configured
+  ///   Delphi version and registry key when the current directory is a
+  ///   workspace, otherwise a hint to run init or help.
+  /// </summary>
+  TDefaultCommand = class(TBaseCommand)
+  public
+    procedure Execute; override;
+    procedure ShowHelp; override;
+  end;
+
   TListCommand = class(TBaseCommand)
   private
     procedure ListBlocks(AProduct: TProduct);
@@ -258,6 +270,47 @@ begin
   TConsole.WriteLine;
 end;
 
+{ TDefaultCommand }
+
+procedure TDefaultCommand.Execute;
+begin
+  inherited;
+  ShowBanner('', '');
+
+  if TWorkspace.Exists then
+  begin
+    var LProduct := TWorkspace.Config.Product;
+    var LRegistryKey := TWorkspace.Config.RegistryKey;
+    if LRegistryKey = '' then
+      LRegistryKey := 'BDS';
+
+    TConsole.WriteLine('  Workspace  ▸  ' + TWorkspace.WorkDir, clWhite);
+    TConsole.WriteLine(
+        '  Delphi     ▸  ' +
+            if LProduct <> '' then LProduct
+            else '(not configured)',
+        clWhite
+    );
+    TConsole.WriteLine('  Registry   ▸  ' + LRegistryKey, clWhite);
+    TConsole.WriteLine;
+    TConsole.WriteLine('Run "' + AppExeName + ' help" to see the available commands.', clGray);
+    TConsole.WriteLine;
+  end
+  else
+  begin
+    TConsole.WriteLine('  The current directory is not a Blocks workspace.', clYellow);
+    TConsole.WriteLine;
+    TConsole.WriteLine('Run "' + AppExeName + ' init" to create one here, or', clGray);
+    TConsole.WriteLine('run "' + AppExeName + ' help" to see all the available commands.', clGray);
+    TConsole.WriteLine;
+  end;
+end;
+
+procedure TDefaultCommand.ShowHelp;
+begin
+  Execute;
+end;
+
 { TListCommand }
 
 procedure TListCommand.Execute;
@@ -434,10 +487,6 @@ begin
   ShowBanner('', '');
   if TWorkspace.Exists then
   begin
-    TConsole.Write('Workspace already initialised. Update package list? [Y/N] (default: Y): ');
-    var Confirm := TConsole.ReadLine;
-    if SameText(Trim(Confirm), 'N') then
-      raise Exception.Create('Operation cancelled.');
     TWorkspace.Update(GetCurrentDir);
   end
   else
@@ -1157,7 +1206,7 @@ end;
 
 initialization
 
-  TCommand.RegisterCommand('help', THelpCommand, True);
+  TCommand.RegisterCommand('help', THelpCommand);
   TCommand.RegisterCommand('list', TListCommand);
   TCommand.RegisterCommand('product', TProductCommand);
   TCommand.RegisterCommand('init', TInitCommand);
@@ -1168,5 +1217,6 @@ initialization
   TCommand.RegisterCommand('view', TViewCommand);
   TCommand.RegisterCommand('version', TVersionCommand);
   TCommand.RegisterCommand('upgrade', TUpgradeCommand);
+  TCommand.RegisterCommand('', TDefaultCommand, True);
 
 end.

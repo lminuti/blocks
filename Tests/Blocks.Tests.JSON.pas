@@ -194,6 +194,10 @@ type
     procedure TestDeserialization_StringDictionary_Missing;
     [Test]
     procedure TestDeserialization_ObjectDictionary_Missing;
+    [Test]
+    procedure TestJSONObject_PreservesKeyOrderOnParse;
+    [Test]
+    procedure TestJSONObject_PreservesKeyOrderOnRoundTrip;
   end;
 
 const
@@ -326,6 +330,19 @@ const
     '''
     {
       "name": "DictLabel"
+    }
+    ''';
+
+  // Keys deliberately not in alphabetical order, to prove insertion/parse
+  // order is what is preserved (not a sort).
+  OrderedKeysJSON =
+    '''
+    {
+      "zebra": "1",
+      "alpha": "2",
+      "mike": "3",
+      "bravo": "4",
+      "delta": "5"
     }
     ''';
 
@@ -786,6 +803,43 @@ begin
   try
     Assert.AreEqual('DictLabel', LObj.Name, 'name');
     Assert.AreEqual(0, LObj.Children.Count, 'children count');
+  finally
+    LObj.Free;
+  end;
+end;
+
+procedure TJSONTest.TestJSONObject_PreservesKeyOrderOnParse;
+const
+  LExpectedOrder: array [0 .. 4] of string = ('zebra', 'alpha', 'mike', 'bravo', 'delta');
+begin
+  // TJSONObject keeps its pairs in a TList, so iterating by index yields the
+  // pairs in the exact order they appear in the source text.
+  var LObj := TJSONObject.ParseJSONValue(OrderedKeysJSON) as TJSONObject;
+  try
+    Assert.IsNotNull(LObj, 'parsed object');
+    Assert.AreEqual(Length(LExpectedOrder), LObj.Count, 'pair count');
+    for var I := 0 to LObj.Count - 1 do
+      Assert.AreEqual(LExpectedOrder[I], LObj.Pairs[I].JsonString.Value, Format('pair[%d]', [I]));
+  finally
+    LObj.Free;
+  end;
+end;
+
+procedure TJSONTest.TestJSONObject_PreservesKeyOrderOnRoundTrip;
+begin
+  // Parsing then re-serializing must emit the keys in the same order, since
+  // ToJSON walks the same internal list.
+  var LObj := TJSONObject.ParseJSONValue(OrderedKeysJSON) as TJSONObject;
+  try
+    var LText := LObj.ToJSON;
+    Assert.IsTrue(
+      LText.IndexOf('zebra') < LText.IndexOf('alpha'), 'zebra before alpha');
+    Assert.IsTrue(
+      LText.IndexOf('alpha') < LText.IndexOf('mike'), 'alpha before mike');
+    Assert.IsTrue(
+      LText.IndexOf('mike') < LText.IndexOf('bravo'), 'mike before bravo');
+    Assert.IsTrue(
+      LText.IndexOf('bravo') < LText.IndexOf('delta'), 'bravo before delta');
   finally
     LObj.Free;
   end;

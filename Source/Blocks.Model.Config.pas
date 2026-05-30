@@ -100,7 +100,7 @@ end;
 function TConfig.ConfigPath: string;
 begin
   ForceDirectories(FWorkspaceDir);
-  Result := TPath.Combine(FWorkspaceDir, 'workspace.json');
+  Result := TPath.Combine(FWorkspaceDir, '.blocks', 'workspace.json');
 end;
 
 constructor TConfig.Create(const AWorkspaceDir: string);

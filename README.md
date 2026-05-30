@@ -83,34 +83,7 @@ blocks config /add sources=https://github.com/owner/my-repo
 
 > **Version constraints & dependencies:** append `@<constraint>` to a package id to pin or restrict the version (e.g. `owner.package@^1.2.0`). The full constraint syntax and how dependency resolution works are documented in [docs/versioning.md](docs/versioning.md).
 
-### The `product` command
-
-`blocks product` lists all Delphi / RAD Studio installations found in the Windows registry. The version name shown (e.g. `delphi13`) is the value to pass as `/product` to other commands.
-
-| Option / argument | Effect |
-|-------------------|--------|
-| _(none)_ | List all installed products in compact form. |
-| `name[:regkey]` | Show detailed info for the named product. Repeat to show multiple. `regkey` defaults to `BDS` when omitted. |
-| `/all` | List all supported Delphi versions (not just installed ones). |
-| `/detail` | Show full detail for every installed product: BDS version, root directory, registry key, running status, and active platform paths. |
-
-The **running status** checks the actual `bds.exe` command line: a profile opened with `bds.exe -r blocks` is only shown as running for the `blocks` registry key, not for `BDS` or any other profile.
-
-With `/detail` (or when filtering by name), only **active platforms** are listed — those for which a platform SDK is configured (`Win32` and `Win64` are always active; others require a matching SDK entry under `PlatformSDKs` in the registry).
-
-```bat
-REM Compact list of all installed versions
-blocks product
-
-REM Full detail for all versions
-blocks product /detail
-
-REM Detail for delphi13 using the default BDS profile
-blocks product delphi13
-
-REM Detail for delphi12 using the "blocks" profile
-blocks product delphi12:blocks
-```
+For the full list of commands and options, see the [command-line reference](docs/cli.md), or run `blocks help <command>`.
 
 ## Output layout
 

@@ -64,7 +64,7 @@ type
   // -----------------------------------------------------------------------
   // Platform map: name -> TManifestPlatform
   // -----------------------------------------------------------------------
-  TSupportedPlatforms = class(TObjectDictionary<string, TManifestPlatform>)
+  TSupportedPlatforms = class(TObjectOrderedDictionary<string, TManifestPlatform>)
   public
     constructor Create;
   end;
@@ -72,7 +72,7 @@ type
   // -----------------------------------------------------------------------
   // Dependency map: name -> version
   // -----------------------------------------------------------------------
-  TDependencyMap = class(TDictionary<string, string>)
+  TDependencyMap = class(TOrderedDictionary<string, string>)
   end;
 
   // -----------------------------------------------------------------------
@@ -104,7 +104,7 @@ type
   // -----------------------------------------------------------------------
   // Package folders: Delphi version -> folder name
   // -----------------------------------------------------------------------
-  TManifestPackageFolders = class(TDictionary<string, string>)
+  TManifestPackageFolders = class(TOrderedDictionary<string, string>)
   end;
 
   // -----------------------------------------------------------------------
