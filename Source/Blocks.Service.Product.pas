@@ -1307,6 +1307,13 @@ begin
       var PkgName := LPackage.Name;
       var TypeStr := string.Join(', ', LPackage.&Type.ToStringArray);
 
+      // Skip design-time packages on platforms flagged as runtime-only.
+      if LPlatformPair.Value.RuntimeOnly and LPackage.IsDesignTime then
+      begin
+        TConsole.WriteLine(Format('    Skipping %s [%s] (runtime-only platform)', [PkgName, TypeStr]), clDkGray);
+        Continue;
+      end;
+
       var DprojPath := TPath.Combine(PackagesPath, PkgName + '.dproj');
       if not TFile.Exists(DprojPath) then
         raise Exception.CreateFmt('Package not found: %s', [DprojPath]);

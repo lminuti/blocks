@@ -52,6 +52,7 @@ type
     FSourcePath: TStringList;
     FReleaseDCUPath: TStringList;
     FDebugDCUPath: TStringList;
+    FRuntimeOnly: Boolean;
   public
     constructor Create;
     destructor Destroy; override;
@@ -59,6 +60,8 @@ type
     property SourcePath: TStringList read FSourcePath;
     property ReleaseDCUPath: TStringList read FReleaseDCUPath;
     property DebugDCUPath: TStringList read FDebugDCUPath;
+    /// <summary>When <c>True</c>, design-time packages are skipped when installing this platform.</summary>
+    property RuntimeOnly: Boolean read FRuntimeOnly write FRuntimeOnly;
   end;
 
   // -----------------------------------------------------------------------

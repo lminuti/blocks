@@ -31,6 +31,11 @@ which other packages are required.
       "sourcePath":     ["Source\\Core", "Source\\Client"],
       "releaseDCUPath": ["lib\\Win32\\release"],
       "debugDCUPath":   ["lib\\Win32\\debug"]
+    },
+    // On a runtime-only platform, design-time packages are skipped on install.
+    "Win64": {
+      "sourcePath":  ["Source\\Core", "Source\\Client"],
+      "runtimeOnly": true
     }
   },
 
@@ -70,7 +75,7 @@ which other packages are required.
 | `keywords` | List of keywords used by `search`. |
 | `repository.type` | Source repository type. Currently `github`. |
 | `repository.url` | GitHub tree URL pinned to a tag or commit; Blocks downloads the ZIP from this ref. |
-| `platforms` | Per-platform `sourcePath` (registered in the Delphi "Browsing Path") and optional `releaseDCUPath` / `debugDCUPath`. |
+| `platforms` | Per-platform `sourcePath` (registered in the Delphi "Browsing Path") and optional `releaseDCUPath` / `debugDCUPath`. Set `runtimeOnly: true` to skip design-time packages when installing that platform. |
 | `packages` | List of `.dproj` files to compile; `type` can be `runtime`, `designtime`, or both. |
 | `packageOptions.folders` | Maps Delphi version keys to the subfolder under `packages\` containing the `.dproj` files. A `+` suffix means "this version or newer". |
 | `dependencies` | Other packages that must be installed first, with their version constraints. See [versioning.md](versioning.md). |

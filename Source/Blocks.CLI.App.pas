@@ -101,12 +101,21 @@ type
   private
     [Param('overwrite')]
     FOverwrite: Boolean;
-    [Param('buildonly')]
-    FBuildOnly: Boolean;
     [Param('silent')]
     FSilent: Boolean;
     [Param('force')]
     FForce: Boolean;
+    [Param]
+    FPackageName: string;
+  public
+    procedure Execute; override;
+    procedure ShowHelp; override;
+  end;
+
+  TBuildCommand = class(TBaseCommand)
+  private
+    [Param('silent')]
+    FSilent: Boolean;
     [Param]
     FPackageName: string;
   public
@@ -248,6 +257,7 @@ begin
   TConsole.WriteLine;
   TConsole.WriteLine('Commands:', clWhite);
   WriteOption('install <package>', 'Install a package by id (vendor.name) or name.');
+  WriteOption('build <package>', 'Recompile an already-installed package without downloading it.');
   WriteOption('uninstall <package>', 'Remove a package from the workspace and database.');
   WriteOption('init', 'Initialise the workspace and download the package repository.');
   WriteOption('list', 'List packages installed in the current workspace.');
@@ -542,7 +552,7 @@ begin
     LVersionConstraint := Trim(LParts[1]);
   end;
   ShowBanner('', '');
-  TWorkspace.Install(LPackageName, LVersionConstraint, FOverwrite, FBuildOnly, FSilent, FForce);
+  TWorkspace.Install(LPackageName, LVersionConstraint, FOverwrite, False, FSilent, FForce);
 end;
 
 procedure TInstallCommand.ShowHelp;
@@ -561,7 +571,6 @@ begin
   TConsole.WriteLine;
   TConsole.WriteLine('Options:', clWhite);
   WriteOption('/overwrite', 'Overwrite the project directory if it already exists.');
-  WriteOption('/buildonly', 'Skip download; compile the already-extracted project.');
   WriteOption('/silent', 'Skip non-critical interactive prompts (use defaults).');
   WriteOption('/force', 'Skip dependencies that conflict with the requested constraint');
   WriteOption('', 'instead of raising an error, using the already-installed version.');
@@ -571,7 +580,38 @@ begin
   TConsole.WriteLine('  ' + AppExeName + ' install owner.package@1.2.0');
   TConsole.WriteLine('  ' + AppExeName + ' install owner.package@^1.2.0 /force');
   TConsole.WriteLine('  ' + AppExeName + ' install package /silent');
-  TConsole.WriteLine('  ' + AppExeName + ' install owner.package /buildonly');
+  TConsole.WriteLine;
+end;
+
+{ TBuildCommand }
+
+procedure TBuildCommand.Execute;
+begin
+  inherited;
+  CheckWorkspace;
+  ShowBanner('', '');
+  // Recompiles an already-installed package without downloading it again.
+  TWorkspace.Install(FPackageName, '', False, True, FSilent, False);
+end;
+
+procedure TBuildCommand.ShowHelp;
+begin
+  TConsole.WriteLine;
+  TConsole.WriteLine('Recompiles and re-registers a package that is already installed,');
+  TConsole.WriteLine('reusing the sources already present in the workspace (no download).');
+  TConsole.WriteLine('The package must have been installed first with "blocks install".');
+  TConsole.WriteLine;
+  TConsole.WriteLine('Usage: ' + AppExeName + ' build <package> [options]', clWhite);
+  TConsole.WriteLine;
+  TConsole.WriteLine('Arguments:', clWhite);
+  WriteOption('<package>', 'Package id (vendor.name) or package name.');
+  TConsole.WriteLine;
+  TConsole.WriteLine('Options:', clWhite);
+  WriteOption('/silent', 'Skip non-critical interactive prompts (use defaults).');
+  TConsole.WriteLine;
+  TConsole.WriteLine('Examples:', clWhite);
+  TConsole.WriteLine('  ' + AppExeName + ' build owner.package');
+  TConsole.WriteLine('  ' + AppExeName + ' build package /silent');
   TConsole.WriteLine;
 end;
 
@@ -1223,6 +1263,7 @@ initialization
   TCommand.RegisterCommand('product', TProductCommand);
   TCommand.RegisterCommand('init', TInitCommand);
   TCommand.RegisterCommand('install', TInstallCommand);
+  TCommand.RegisterCommand('build', TBuildCommand);
   TCommand.RegisterCommand('uninstall', TUninstallCommand);
   TCommand.RegisterCommand('search', TSearchCommand);
   TCommand.RegisterCommand('config', TConfigCommand);

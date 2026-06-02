@@ -507,8 +507,16 @@ begin
     TConsole.WriteLine;
     TestDelphiRunning(LSelectedProduct);
 
-    // Step 4 — Version compatibility check (unless -Overwrite or -BuildOnly)
-    if not AOverwrite and not ABuildOnly then
+    // Step 4 — In build-only mode the package must already be installed
+    if ABuildOnly then
+    begin
+      if Database.InstalledVersion(LManifest.Id) = '' then
+        raise Exception.CreateFmt(
+            'Cannot build %s: the package is not installed. Run "blocks install %s" first.',
+            [LManifest.Id, LManifest.Id]);
+    end
+    // Step 4b — Version compatibility check (unless -Overwrite)
+    else if not AOverwrite then
     begin
       var LInstalledVer := Database.InstalledVersion(LManifest.Id);
       if LInstalledVer <> '' then
@@ -574,7 +582,6 @@ begin
     begin
       if not TDirectory.Exists(LProjectDir) then
         raise Exception.CreateFmt('Build-only mode: project directory not found: %s', [LProjectDir]);
-      TConsole.WriteLine('Build-only mode. Using existing directory: ' + LProjectDir, clYellow);
       TConsole.WriteLine;
     end;
 
@@ -591,6 +598,10 @@ begin
 
         for var LPackage in LManifest.Packages do
         begin
+          // Design-time packages are not built on runtime-only platforms, so skip their paths too.
+          if LPlatformPair.Value.RuntimeOnly and LPackage.IsDesignTime then
+            Continue;
+
           var DprojPath := TPath.Combine(LPackagesPath, LPackage.Name + '.dproj');
           var LPlatformPaths :=
               GetPlatformPaths(LManifest, DprojPath, LProjectDir, LPlatformPair.Key, LEnvironmentVariables);

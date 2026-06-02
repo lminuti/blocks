@@ -13,6 +13,7 @@ Usage: Blocks <command> [options]
 
 Commands:
   install <package>      Install a package by id (vendor.name) or name.
+  build <package>        Recompile an already-installed package without downloading it.
   uninstall <package>    Remove a package from the workspace and database.
   init                   Initialise the workspace and download the package repository.
   list                   List packages installed in the current workspace.
@@ -50,7 +51,6 @@ Arguments:
 
 Options:
   /overwrite             Overwrite the project directory if it already exists.
-  /buildonly             Skip download; compile the already-extracted project.
   /silent                Skip non-critical interactive prompts (use defaults).
   /force                 Skip dependencies that conflict with the requested constraint
                          instead of raising an error, using the already-installed version.
@@ -60,7 +60,26 @@ Examples:
   Blocks install owner.package@1.2.0
   Blocks install owner.package@^1.2.0 /force
   Blocks install package /silent
-  Blocks install owner.package /buildonly
+```
+
+## Build
+
+Recompiles and re-registers a package that is already installed, reusing the
+sources already present in the workspace (no download). The package must have
+been installed first with `blocks install`.
+
+```
+Usage: Blocks build <package> [options]
+
+Arguments:
+  <package>              Package id (vendor.name) or package name.
+
+Options:
+  /silent                Skip non-critical interactive prompts (use defaults).
+
+Examples:
+  Blocks build owner.package
+  Blocks build package /silent
 ```
 
 ## Uninstall
