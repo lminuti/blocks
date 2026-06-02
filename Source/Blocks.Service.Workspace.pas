@@ -169,7 +169,6 @@ begin
   var LPlatformManifest := AManifest.Platforms[APlatform];
   var LPackage := TPackageProject.LoadFromFile(ADprojName);
   try
-    var LDprojDir := ExtractFilePath(ADprojName);
     AEnvironmentVariable.Values['Platform'] := APlatform;
     var LDLLSuffix := LPackage.LibSuffix;
     if SameText(LDLLSuffix, 'AUTO') then
@@ -180,27 +179,14 @@ begin
     var LSourcePath := LPlatformManifest.SourcePath.ToStringArray;
     NormalizePath(LSourcePath, AProjectDir, AEnvironmentVariable);
 
-    var LDebugDcuPath: TArray<string>;
-    var LReleaseDcuPath: TArray<string>;
+    // DCU paths are registered using the IDE's $(BLOCKSDIR) environment variable
+    // (the workspace's .blocks folder) instead of an absolute path:
+    //   $(BLOCKSDIR)\lib\<manifest name>\<Platform>[\debug]
+    var LDcuBase := '$(BLOCKSDIR)\lib\' + AManifest.Name;
 
-    if AManifest.PackageOptions.KeepProjectDcuPaths then
-    begin
-      LDebugDcuPath := LPackage.GetProperty(TPackageProject.DCCDcuOutput, 'Debug', APlatform).Split([';']);
-      AEnvironmentVariable.Values['Config'] := 'Debug';
-      NormalizePath(LDebugDcuPath, LDprojDir, AEnvironmentVariable);
-
-      LReleaseDcuPath := LPackage.GetProperty(TPackageProject.DCCDcuOutput, 'Release', APlatform).Split([';']);
-      AEnvironmentVariable.Values['Config'] := 'Release';
-      NormalizePath(LReleaseDcuPath, LDprojDir, AEnvironmentVariable);
-    end
-    else
-    begin
-      LReleaseDcuPath := [TPath.Combine(AProjectDir, 'lib', APlatform)];
-      LDebugDcuPath := [TPath.Combine(AProjectDir, 'lib', APlatform, 'debug')];
-    end;
     Result.SourcePath := LSourcePath;
-    Result.ReleaseDCUPath := LReleaseDcuPath;
-    Result.DebugDCUPath := LDebugDcuPath;
+    Result.ReleaseDCUPath := [LDcuBase + '\' + APlatform];
+    Result.DebugDCUPath := [LDcuBase + '\' + APlatform + '\debug'];
   finally
     LPackage.Free;
   end;
@@ -733,6 +719,12 @@ begin
     InitializeFromSource(LSource);
 
   RebuildIndex;
+
+  var LProduct := Config.Product;
+  if LProduct = '' then
+    raise Exception.Create('No Delphi version configured. Run "blocks init /product <version>" first.');
+  var LSelectedProduct := TProduct.Find(LProduct, Config.RegistryKey);
+  LSelectedProduct.CheckEnvironment(AWorkDir);
 
   Database.TouchRepository;
 end;

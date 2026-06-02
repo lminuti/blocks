@@ -93,11 +93,9 @@ When `blocks install` compiles a package it overrides the MSBuild output paths s
 |----------|-------------|
 | BPL files | `.blocks\bpl\` (release) and `.blocks\bpl\debug\` (debug) |
 | DCP files | `.blocks\dcp\` (release) and `.blocks\dcp\debug\` (debug) |
-| DCU files | `<project>\lib\<Platform>\` (release) and `<project>\lib\<Platform>\debug\` (debug) |
+| DCU files | `.blocks\lib\<name>\<Platform>\` (release) and `.blocks\lib\<name>\<Platform>\debug\` (debug), where `<name>` is the manifest's `name` |
 
-The fixed BPL/DCP location makes installations under different IDE registry profiles (created with `bds.exe -r <key>`) safe: each workspace gets its own `.blocks\` tree, so artefacts from different profiles never collide.
-
-DCU output can be left to the package's own `.dproj` by setting `packageOptions.keepProjectDcuPaths` to `true` in the manifest. This should not be used unless preserving the DCU layout declared by the `.dproj` is strictly necessary.
+The fixed `.blocks\` location makes installations under different IDE registry profiles (created with `bds.exe -r <key>`) safe: each workspace gets its own `.blocks\` tree, so artefacts from different profiles never collide.
 
 Both **debug** and **release** configurations are compiled for every package. After the build, Blocks registers the DCU search paths under `HKCU\Software\Embarcadero\<profile>\<BdsVersion>\Library\<Platform>` together with the manifest's `sourcePath`.
 
@@ -123,7 +121,7 @@ Each package in the repository is described by a JSON manifest file (`<vendor>.<
   },
 
   // "sourcePath" entries are registered in the Delphi library "Browsing Path".
-  // DCU output locations come from the .dproj itself; Blocks does not override them.
+  // DCUs are written by Blocks to <workspace>\.blocks\lib\<name>\<Platform>[\debug].
   "platforms": {
     "Win32": {
       "sourcePath":     ["Source\\Core", "Source\\Client"],

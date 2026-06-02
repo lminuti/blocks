@@ -58,12 +58,7 @@ output paths point at the exact location that compilation used.
 | `%PROJECT_PATH%`   | Extracted project directory (`<workspace>\<package name>`).           |
 | `%BPL_PATH%`       | BPL output dir (`<workspace>\.blocks\<platform>\bpl[\debug]`).        |
 | `%DCP_PATH%`       | DCP output dir (`<workspace>\.blocks\<platform>\dcp[\debug]`).        |
-| `%DCU_PATH%`       | DCU output dir (`<project>\lib\<platform>[\debug]`). See note below.  |
-
-> **Note** — `%DCU_PATH%` is only set when the manifest's
-> `packageOptions.keepProjectDcuPaths` is `false` (the default). When it is
-> `true`, the DCU output is driven by each package's own `.dproj` and there is
-> no single project-level DCU path, so `%DCU_PATH%` is empty.
+| `%DCU_PATH%`       | DCU output dir (`<workspace>\.blocks\lib\<name>\<platform>[\debug]`). |
 
 ### Install / uninstall events (`beforeInstall`, `afterInstall`, `beforeUninstall`, `afterUninstall`)
 
@@ -134,8 +129,7 @@ What it does:
 
 It takes no `args`. Because `afterCompile` fires once per package, `copyres`
 runs once per package and simply overwrites the same files — this is harmless
-and intentionally produces no extra output. If `%DCU_PATH%` is empty (i.e.
-`keepProjectDcuPaths` is enabled) the command raises an error.
+and intentionally produces no extra output.
 
 ```json
 { "description": "Copy resources and dfm", "event": "afterCompile", "command": "copyres" }

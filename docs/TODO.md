@@ -1,11 +1,13 @@
 # TODO
 
 - [*] Verify the order in which dependencies are installed
+- [*] Update the local repository if outdated
+- [ ] Handle naming conflicts (install folder, package names, DCU folder names)
 - [ ] Delphi environment variable BLOCKSDIR
 - [ ] Import and export of the dependency database so the same environment can be recreated on another machine
 - [ ] Support for platforms other than Win32 and Win64
-- [ ] Ability to install from a zip
-- [ ] New manifest scripts, such as a `copy` command (see [Scripts](#scripts))
+- [ ] New repository location (private repo? HTTP url? Authentication?)
+- [ ] New manifest scripts, such as a `copy`, `cmd`, `rename`, ... (see [Scripts](#scripts))
 - [ ] `build` or `compile` command that recompiles an already installed package
 - [ ] GUI version
 - [ ] Expert version to be installed in the IDE

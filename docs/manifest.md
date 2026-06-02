@@ -25,7 +25,7 @@ which other packages are required.
   },
 
   // "sourcePath" entries are registered in the Delphi library "Browsing Path".
-  // DCU output locations come from the .dproj itself; Blocks does not override them.
+  // DCUs are written by Blocks to <workspace>\.blocks\lib\<name>\<Platform>[\debug].
   "platforms": {
     "Win32": {
       "sourcePath":     ["Source\\Core", "Source\\Client"],
@@ -73,7 +73,6 @@ which other packages are required.
 | `platforms` | Per-platform `sourcePath` (registered in the Delphi "Browsing Path") and optional `releaseDCUPath` / `debugDCUPath`. |
 | `packages` | List of `.dproj` files to compile; `type` can be `runtime`, `designtime`, or both. |
 | `packageOptions.folders` | Maps Delphi version keys to the subfolder under `packages\` containing the `.dproj` files. A `+` suffix means "this version or newer". |
-| `packageOptions.keepProjectDcuPaths` | Optional; defaults to `false`. When `true`, DCU output paths are taken from the `.dproj` instead of Blocks' default `<project>\lib\<Platform>\`. Should not be used unless preserving the DCU layout declared by the `.dproj` is strictly necessary. |
 | `dependencies` | Other packages that must be installed first, with their version constraints. See [versioning.md](versioning.md). |
 | `scripts` | Optional built-in commands run at lifecycle events (e.g. `afterCompile`). See [script.md](script.md). |
 

@@ -230,7 +230,7 @@ begin
   var LDcuPath := AEnvironmentVariables.Values['DCU_PATH'];
 
   if LDcuPath = '' then
-    raise EScriptError.Create('copyres: %DCU_PATH% is not set (is keepProjectDcuPaths enabled?)');
+    raise EScriptError.Create('copyres: %DCU_PATH% is not set');
 
   // Source paths are declared per platform; nothing to do if this platform is absent.
   var LPlatformManifest: TManifestPlatform;

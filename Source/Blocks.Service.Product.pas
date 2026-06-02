@@ -391,10 +391,11 @@ begin
     LEnv.Values['PROJECT_PATH'] := AProjectDir;
     LEnv.Values['BPL_PATH'] := TPath.Combine(LBlocksDir, APlatform, 'bpl', LSuffix);
     LEnv.Values['DCP_PATH'] := TPath.Combine(LBlocksDir, APlatform, 'dcp', LSuffix);
-    // When KeepProjectDcuPaths is set the DCU output is driven by each package's
-    // own .dproj, so there is no single project-level DCU path to expose.
-    if not AManifest.PackageOptions.KeepProjectDcuPaths then
-      LEnv.Values['DCU_PATH'] := TPath.Combine(AProjectDir, 'lib', APlatform, LSuffix);
+    // DCUs live under <workspace>\.blocks\lib\<manifest name>\<Platform>[\debug].
+    var LDcuPath := TPath.Combine([LBlocksDir, 'lib', AManifest.Name, APlatform]);
+    if LSuffix <> '' then
+      LDcuPath := TPath.Combine(LDcuPath, LSuffix);
+    LEnv.Values['DCU_PATH'] := LDcuPath;
 
     TScriptRunner.RunEvent(AManifest, AEvent, LEnv);
   finally
@@ -534,7 +535,8 @@ procedure TProduct.DeleteSearchPaths(const APlatform, AProjectDir: string; APlat
         if AReg.ValueExists(ARegValue) then AReg.ReadString(ARegValue)
         else '';
 
-    // APaths and the registry entries are both absolute paths — match directly.
+    // APaths are registered verbatim by AppendPaths (absolute source paths, or
+    // $(BLOCKSDIR)-rooted DCU paths), so match them against the stored entries directly.
     var LNewList: TArray<string> := [];
     for var LFullPath in LExisting.Split([';']) do
       if not TArray.Contains<string>(APaths, LFullPath, TIStringComparer.Ordinal) then
@@ -695,7 +697,8 @@ procedure TProduct.RemovePackage(
 
   procedure SafeDeleteFile(const AFileName: string);
   begin
-    TConsole.WriteLine(Format('Deleting file %s', [AFileName]));
+    // Write only if verbose is on
+    // TConsole.WriteLine(Format('Deleting file %s', [AFileName]));
     if not System.SysUtils.DeleteFile(AFileName) then
       TConsole.WriteWarning(Format('Can''t delete file %s', [AFileName]));
   end;
@@ -1103,7 +1106,12 @@ procedure TProduct.UpdateSearchPaths(const APlatform, AProjectDir: string; APlat
 
     for var LPath in APaths do
     begin
-      var LNewPath := TPath.Combine(AProjectDir, LPath);
+      // Paths that start with an IDE macro (e.g. $(BLOCKSDIR)) are already
+      // resolved by Delphi at load time; combining them with AProjectDir would
+      // corrupt the macro, so register them verbatim.
+      var LNewPath :=
+          if LPath.StartsWith('$(') then LPath
+          else TPath.Combine(AProjectDir, LPath);
       if not TArray.Contains<string>(LNewPaths, LNewPath, TIStringComparer.Ordinal) then
       begin
         LNewPaths := LNewPaths + [LNewPath];
@@ -1188,6 +1196,16 @@ begin
       if not LReg.OpenKey(LRegPath, True) then
         Continue;
       try
+        // Expose the workspace's .blocks directory as a Delphi environment
+        // variable so manifests/packages can reference $(BLOCKSDIR). Only set it
+        // when missing, to avoid clobbering a value the user may have customised.
+        if not LReg.ValueExists('BLOCKSDIR') then
+        begin
+          var LBlocksDir := TPath.Combine(AWorkspaceDir, '.blocks');
+          LReg.WriteString('BLOCKSDIR', LBlocksDir);
+          TConsole.WriteLine(Format('Registered BLOCKSDIR for %s: %s', [LPlatform, LBlocksDir]), clGreen);
+        end;
+
         var LBplPath := TPath.Combine([AWorkspaceDir, '.blocks', LPlatform, 'bpl']);
         var LExisting :=
             if LReg.ValueExists('PATH') then LReg.ReadString('PATH')
@@ -1323,11 +1341,10 @@ begin
                 + TPath.Combine(BlocksDir, LPlatform, 'dcp', LSuffix)
                 + '"';
 
-        if not AManifest.PackageOptions.KeepProjectDcuPaths then
-        begin
-          LMSBuildParams :=
-              LMSBuildParams + ' /p:DCC_DcuOutput="' + TPath.Combine(AProjectDir, 'lib', LPlatform, LSuffix) + '"';
-        end;
+        var LDcuOutput := TPath.Combine([BlocksDir, 'lib', AManifest.Name, LPlatform]);
+        if LSuffix <> '' then
+          LDcuOutput := TPath.Combine(LDcuOutput, LSuffix);
+        LMSBuildParams := LMSBuildParams + ' /p:DCC_DcuOutput="' + LDcuOutput + '"';
 
         var CmdLine :=
             Format(
