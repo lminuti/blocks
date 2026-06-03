@@ -13,7 +13,30 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # 2. Build the project using MSBuild
+      # 2. Build the test project
+      - name: Build Tests
+        run: |
+          cd Tests
+          BuildTest.bat
+        shell: cmd
+
+      # 3. Run the tests - fail the build if any test fails
+      - name: Run Tests
+        run: |
+          $exe = "Tests\Win32\Release\Blocks.Tests.Framework.exe"
+          if (-not (Test-Path $exe)) {
+              Write-Error "Test executable not found: $exe"
+              exit 1
+          }
+          & $exe --exitbehavior:Continue
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Tests failed with exit code $LASTEXITCODE."
+              exit $LASTEXITCODE
+          }
+          Write-Host "All tests passed."
+        shell: powershell
+
+      # 4. Build the project using MSBuild
       # Note: Adjust the rsvars.bat path to match your Delphi version/installation
       - name: Compile Delphi Project
         run: |
@@ -21,7 +44,7 @@ jobs:
           BuildRelease.bat
         shell: cmd
 
-      # 3. Ensure the binary was created successfully
+      # 5. Ensure the binary was created successfully
       - name: Verify Compiled Binary
         run: |
           if (Test-Path "setup\Output\blocks-setup.exe") {
@@ -32,7 +55,7 @@ jobs:
           }
         shell: powershell
 
-      # 4. Copy the generated installer to the deploy folder
+      # 6. Copy the generated installer to the deploy folder
       - name: Deploy Installer
         run: |
           $target = "C:\Corsi\DelphiDay2026"
