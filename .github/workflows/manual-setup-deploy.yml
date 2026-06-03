@@ -17,7 +17,8 @@ jobs:
       # Note: Adjust the rsvars.bat path to match your Delphi version/installation
       - name: Compile Delphi Project
         run: |
-          setup\BuildRelease.bat
+          cd setup
+          BuildRelease.bat
         shell: cmd
 
       # 3. Ensure the binary was created successfully
