@@ -1,0 +1,32 @@
+name: Manual Delphi Build and Deploy
+
+# Enable manual trigger from the GitHub Actions UI
+on:
+  workflow_dispatch:
+
+jobs:
+  build_and_deploy:
+    runs-on: self-hosted
+
+    steps:
+      # 1. Download source code from the repository
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # 2. Build the project using MSBuild
+      # Note: Adjust the rsvars.bat path to match your Delphi version/installation
+      - name: Compile Delphi Project
+        run: |
+          setup\BuildRelease.bat
+        shell: cmd
+
+      # 3. Ensure the binary was created successfully
+      - name: Verify Compiled Binary
+        run: |
+          if (Test-Path "setup\Output\blocks-setup.exe") {
+              Write-Host "Verification Success: blocks-setup.exe found."
+          } else {
+              Write-Error "Verification Failed: Executable not found in setup\Output."
+              exit 1
+          }
+        shell: powershell
