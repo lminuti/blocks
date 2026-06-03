@@ -1,9 +1,10 @@
 # TODO
 
-- [*] Verify the order in which dependencies are installed
-- [*] Update the local repository if outdated
+- [x] Verify the order in which dependencies are installed
+- [x] Update the local repository if outdated
+- [x] Delphi environment variable BLOCKSDIR
+- [ ] Add per package constraints (such as required Delphi version, ...)
 - [ ] Handle naming conflicts (install folder, package names, DCU folder names)
-- [ ] Delphi environment variable BLOCKSDIR
 - [ ] Import and export of the dependency database so the same environment can be recreated on another machine
 - [ ] Support for platforms other than Win32 and Win64
 - [ ] New repository location (private repo? HTTP url? Authentication?)

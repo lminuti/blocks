@@ -173,7 +173,8 @@ Examples:
 
 ## Config
 
-Reads or writes workspace or system configuration values.
+Reads or writes workspace or system configuration values. See
+[Configuration](config.md) for a detailed description of every key.
 
 ```
 Usage: Blocks config [/add | /delete] [/system] [<key>[=<value>] ...]

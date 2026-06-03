@@ -151,7 +151,8 @@ type
     FSystem: Boolean;
     [Param]
     FConfigs: TArray<string>;
-    procedure WriteConfig(const AName, AValue: string);
+    procedure WriteField(const ALabel, AValue: string);
+    procedure WriteSectionTitle(const ATitle: string);
   public
     procedure Execute; override;
     procedure ShowHelp; override;
@@ -794,17 +795,31 @@ begin
   begin
     if FSystem then
     begin
+      WriteSectionTitle('System configuration');
       var LSystemConfig := TStringList.Create;
       try
         TSystemConfig.GetAll(LSystemConfig);
         for var LIndex := 0 to LSystemConfig.Count - 1 do
-          WriteConfig(LSystemConfig.Names[LIndex], LSystemConfig.ValueFromIndex[LIndex]);
+          WriteField(LSystemConfig.Names[LIndex], LSystemConfig.ValueFromIndex[LIndex]);
       finally
         LSystemConfig.Free;
       end;
+      TConsole.WriteLine;
       Exit;
     end;
-    TConsole.WriteLine(TWorkspace.Config.ToJson);
+
+    WriteSectionTitle('Workspace configuration');
+    WriteField('Product', TWorkspace.Config.Product);
+    WriteField('RegistryKey', TWorkspace.Config.RegistryKey);
+    WriteField('UpdateDcpSearchPath', TWorkspace.Config.Get('updatedcpsearchpath'));
+
+    WriteSectionTitle('Sources');
+    if TWorkspace.Config.Sources.Count = 0 then
+      TConsole.WriteLine('    (none)', clDkGray)
+    else
+      for var LSource in TWorkspace.Config.Sources do
+        TConsole.WriteLine('    ' + LSource);
+    TConsole.WriteLine;
     Exit;
   end;
 
@@ -819,7 +834,7 @@ begin
       else
         LValue := TWorkspace.Config.Get(LConfig);
 
-      WriteConfig(LConfig, LValue);
+      WriteField(LConfig, LValue);
     end
     else
     begin
@@ -902,11 +917,23 @@ begin
   TConsole.WriteLine;
 end;
 
-procedure TConfigCommand.WriteConfig(const AName, AValue: string);
+procedure TConfigCommand.WriteField(const ALabel, AValue: string);
+const
+  LabelW = 20;
 begin
-  TConsole.Write(AName, clWhite);
-  TConsole.Write(': ');
-  TConsole.WriteLine(AValue, clCyan);
+  TConsole.Write('  ' + ALabel.PadRight(LabelW), clCyan);
+  if AValue = '' then
+    TConsole.WriteLine('▸  (not set)', clDkGray)
+  else
+    TConsole.WriteLine('▸  ' + AValue);
+end;
+
+procedure TConfigCommand.WriteSectionTitle(const ATitle: string);
+begin
+  TConsole.WriteLine;
+  TConsole.WriteLine('  ' + ATitle, clWhite);
+  TConsole.WriteLine('  ' + StringOfChar('─', 44), clDkGray);
+  TConsole.WriteLine;
 end;
 
 { TViewCommand }
