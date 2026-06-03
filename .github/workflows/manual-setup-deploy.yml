@@ -31,3 +31,12 @@ jobs:
               exit 1
           }
         shell: powershell
+
+      # 4. Copy the generated installer to the deploy folder
+      - name: Deploy Installer
+        run: |
+          $target = "C:\Corsi\DelphiDay2026"
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item "setup\Output\blocks-setup.exe" -Destination $target -Force
+          Write-Host "Deployed blocks-setup.exe to $target."
+        shell: powershell
